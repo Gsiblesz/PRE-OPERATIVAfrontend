@@ -34,6 +34,8 @@ export default function ResultadosInspecciones() {
   const [area, setArea] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [equipoQuery, setEquipoQuery] = useState("");
+  const [soloNoConformes, setSoloNoConformes] = useState(false);
   const [data, setData] = useState<Inspeccion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -42,31 +44,113 @@ export default function ResultadosInspecciones() {
     return Array.from(new Set(data.map((item) => item.area))).sort((a, b) => a.localeCompare(b));
   }, [data]);
 
+  const dataFiltrada = useMemo(() => {
+    const query = equipoQuery.trim().toLowerCase();
+
+    return data
+      .map((inspeccion) => {
+        const equipos = inspeccion.evaluacion_equipos.filter((equipo) => {
+          const coincideNombre = query
+            ? equipo.equipoNombre.toLowerCase().includes(query)
+            : true;
+
+          const tieneNoConformes = equipo.aspectos.some(
+            (aspecto) => aspecto.estado === "no_conforme"
+          );
+
+          if (soloNoConformes && !tieneNoConformes) return false;
+          if (query && !coincideNombre) return false;
+          return true;
+        });
+
+        return {
+          ...inspeccion,
+          evaluacion_equipos: equipos,
+        };
+      })
+      .filter((inspeccion) => inspeccion.evaluacion_equipos.length > 0);
+  }, [data, equipoQuery, soloNoConformes]);
+
   const resumen = useMemo(() => {
-    const totalInspecciones = data.length;
-    const totalEquipos = data.reduce((acc, row) => acc + row.evaluacion_equipos.length, 0);
+    const totalInspecciones = dataFiltrada.length;
+    const totalEquipos = dataFiltrada.reduce((acc, row) => acc + row.evaluacion_equipos.length, 0);
+    const totalNoConformes = dataFiltrada.reduce(
+      (acc, row) =>
+        acc +
+        row.evaluacion_equipos.reduce(
+          (equiposAcc, equipo) =>
+            equiposAcc +
+            equipo.aspectos.filter((aspecto) => aspecto.estado === "no_conforme").length,
+          0
+        ),
+      0
+    );
 
-    const totalNoConformes = data.reduce((acc, row) => {
-      const count = row.evaluacion_equipos.reduce(
-        (equiposAcc, equipo) =>
-          equiposAcc + equipo.aspectos.filter((aspecto) => aspecto.estado === "no_conforme").length,
-        0
-      );
-      return acc + count;
-    }, 0);
+    const inspeccionesConIncidencias = dataFiltrada.filter((row) =>
+      row.evaluacion_equipos.some((equipo) =>
+        equipo.aspectos.some((aspecto) => aspecto.estado === "no_conforme")
+      )
+    ).length;
 
-    return { totalInspecciones, totalEquipos, totalNoConformes };
-  }, [data]);
+    return {
+      totalInspecciones,
+      totalEquipos,
+      totalNoConformes,
+      inspeccionesConIncidencias,
+      tasaIncidencia:
+        totalInspecciones > 0
+          ? Math.round((inspeccionesConIncidencias / totalInspecciones) * 100)
+          : 0,
+    };
+  }, [dataFiltrada]);
 
   const datosPorArea = useMemo(() => {
-    return data.reduce<Record<string, Inspeccion[]>>((acc, row) => {
+    return dataFiltrada.reduce<Record<string, Inspeccion[]>>((acc, row) => {
       if (!acc[row.area]) {
         acc[row.area] = [];
       }
       acc[row.area].push(row);
       return acc;
     }, {});
-  }, [data]);
+  }, [dataFiltrada]);
+
+  const incidenciasPorArea = useMemo(() => {
+    const map = dataFiltrada.reduce<Record<string, number>>((acc, row) => {
+      const noConformesArea = row.evaluacion_equipos.reduce(
+        (eqAcc, equipo) =>
+          eqAcc + equipo.aspectos.filter((aspecto) => aspecto.estado === "no_conforme").length,
+        0
+      );
+
+      acc[row.area] = (acc[row.area] ?? 0) + noConformesArea;
+      return acc;
+    }, {});
+
+    return Object.entries(map)
+      .map(([areaNombre, total]) => ({ areaNombre, total }))
+      .sort((a, b) => b.total - a.total);
+  }, [dataFiltrada]);
+
+  const topEquiposNoConformes = useMemo(() => {
+    const map = dataFiltrada.reduce<Record<string, number>>((acc, row) => {
+      row.evaluacion_equipos.forEach((equipo) => {
+        const noConformes = equipo.aspectos.filter(
+          (aspecto) => aspecto.estado === "no_conforme"
+        ).length;
+
+        if (noConformes > 0) {
+          acc[equipo.equipoNombre] = (acc[equipo.equipoNombre] ?? 0) + noConformes;
+        }
+      });
+
+      return acc;
+    }, {});
+
+    return Object.entries(map)
+      .map(([equipoNombre, total]) => ({ equipoNombre, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8);
+  }, [dataFiltrada]);
 
   const cargarResultados = async (passwordValue: string, keepFilters = true) => {
     if (!API_BASE_URL) {
@@ -131,6 +215,8 @@ export default function ResultadosInspecciones() {
     setArea("");
     setFrom("");
     setTo("");
+    setEquipoQuery("");
+    setSoloNoConformes(false);
     if (!password) return;
 
     setLoading(true);
@@ -170,7 +256,9 @@ export default function ResultadosInspecciones() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold text-slate-800 md:text-2xl">Resultados de inspecciones</h1>
-            <p className="mt-1 text-sm text-slate-500">Vista protegida para análisis por área y fecha</p>
+            <p className="mt-1 text-sm text-slate-500">
+              La pre operativo en Pan de Tata para identificar incidencias y detectar no conformidades por área y equipo
+            </p>
           </div>
           <Link
             href="/"
@@ -209,8 +297,8 @@ export default function ResultadosInspecciones() {
               <p className="text-2xl font-semibold text-slate-800">{resumen.totalInspecciones}</p>
             </article>
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Equipos evaluados</p>
-              <p className="text-2xl font-semibold text-slate-800">{resumen.totalEquipos}</p>
+              <p className="text-sm text-slate-500">Inspecciones con incidencias</p>
+              <p className="text-2xl font-semibold text-amber-700">{resumen.inspeccionesConIncidencias}</p>
             </article>
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm text-slate-500">No conformes</p>
@@ -218,8 +306,19 @@ export default function ResultadosInspecciones() {
             </article>
           </section>
 
+          <section className="grid gap-3 md:grid-cols-2">
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-slate-500">Equipos evaluados</p>
+              <p className="text-2xl font-semibold text-slate-800">{resumen.totalEquipos}</p>
+            </article>
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-slate-500">Tasa de incidencia</p>
+              <p className="text-2xl font-semibold text-slate-800">{resumen.tasaIncidencia}%</p>
+            </article>
+          </section>
+
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-            <form className="grid gap-3 md:grid-cols-4" onSubmit={onFiltrar}>
+            <form className="grid gap-3 md:grid-cols-5" onSubmit={onFiltrar}>
               <select
                 value={area}
                 onChange={(event) => setArea(event.target.value)}
@@ -247,6 +346,14 @@ export default function ResultadosInspecciones() {
                 className="rounded-xl border border-slate-300 p-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
 
+              <input
+                type="text"
+                value={equipoQuery}
+                onChange={(event) => setEquipoQuery(event.target.value)}
+                placeholder="Buscar equipo"
+                className="rounded-xl border border-slate-300 p-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
+              />
+
               <div className="flex gap-2">
                 <button
                   type="submit"
@@ -265,6 +372,16 @@ export default function ResultadosInspecciones() {
               </div>
             </form>
 
+            <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={soloNoConformes}
+                onChange={(event) => setSoloNoConformes(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Mostrar solo equipos con no conformidades
+            </label>
+
             <div className="mt-3 flex justify-end">
               <button
                 type="button"
@@ -275,6 +392,56 @@ export default function ResultadosInspecciones() {
               </button>
             </div>
             {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
+          </section>
+
+          <section className="grid gap-3 lg:grid-cols-2">
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+              <h2 className="text-base font-semibold text-slate-800">No conformidades por área</h2>
+              <div className="mt-3 space-y-2">
+                {incidenciasPorArea.map((item) => {
+                  const max = incidenciasPorArea[0]?.total ?? 1;
+                  const width = Math.max(8, Math.round((item.total / max) * 100));
+                  return (
+                    <div key={item.areaNombre}>
+                      <div className="mb-1 flex items-center justify-between text-sm text-slate-600">
+                        <span>{item.areaNombre}</span>
+                        <span>{item.total}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-100">
+                        <div className="h-2 rounded-full bg-rose-400" style={{ width: `${width}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                {incidenciasPorArea.length === 0 ? (
+                  <p className="text-sm text-slate-500">Sin incidencias para mostrar.</p>
+                ) : null}
+              </div>
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+              <h2 className="text-base font-semibold text-slate-800">Top equipos con no conformidades</h2>
+              <div className="mt-3 space-y-2">
+                {topEquiposNoConformes.map((item) => {
+                  const max = topEquiposNoConformes[0]?.total ?? 1;
+                  const width = Math.max(8, Math.round((item.total / max) * 100));
+                  return (
+                    <div key={item.equipoNombre}>
+                      <div className="mb-1 flex items-center justify-between gap-3 text-sm text-slate-600">
+                        <span className="line-clamp-1">{item.equipoNombre}</span>
+                        <span>{item.total}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-100">
+                        <div className="h-2 rounded-full bg-amber-400" style={{ width: `${width}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                {topEquiposNoConformes.length === 0 ? (
+                  <p className="text-sm text-slate-500">Sin equipos con no conformidades.</p>
+                ) : null}
+              </div>
+            </article>
           </section>
 
           <section className="space-y-4">
@@ -301,7 +468,14 @@ export default function ResultadosInspecciones() {
 
                       <div className="space-y-2">
                         {inspeccion.evaluacion_equipos.map((equipo) => (
-                          <div key={`${inspeccion.id}-${equipo.equipoId}`} className="rounded-lg bg-white p-3">
+                          <div
+                            key={`${inspeccion.id}-${equipo.equipoId}`}
+                            className={`rounded-lg bg-white p-3 ${
+                              equipo.aspectos.some((aspecto) => aspecto.estado === "no_conforme")
+                                ? "border border-rose-200"
+                                : ""
+                            }`}
+                          >
                             <p className="font-medium text-slate-800">{equipo.equipoNombre}</p>
                             <div className="mt-2 flex flex-wrap gap-1">
                               {equipo.aspectos.map((aspecto) => (
@@ -330,7 +504,7 @@ export default function ResultadosInspecciones() {
                 </div>
               </article>
             ))}
-            {!loading && data.length === 0 ? (
+            {!loading && dataFiltrada.length === 0 ? (
               <article className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm md:p-6">
                 No hay resultados para los filtros seleccionados.
               </article>
