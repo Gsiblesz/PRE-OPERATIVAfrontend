@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 const MONTH_OPTIONS = [
   { value: "01", label: "Ene" },
@@ -64,6 +64,8 @@ export default function ResultadosInspecciones() {
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
   const [data, setData] = useState<Inspeccion[]>([]);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [error, setError] = useState("");
 
   const areasDisponibles = useMemo(() => {
@@ -139,6 +141,13 @@ export default function ResultadosInspecciones() {
       return acc;
     }, {});
   }, [dataFiltrada]);
+
+  const visibleIds = useMemo(() => dataFiltrada.map((item) => item.id), [dataFiltrada]);
+
+  useEffect(() => {
+    const visibleSet = new Set(visibleIds);
+    setSelectedIds((prev) => prev.filter((id) => visibleSet.has(id)));
+  }, [visibleIds]);
 
   const incidenciasPorArea = useMemo(() => {
     const map = dataFiltrada.reduce<Record<string, number>>((acc, row) => {
@@ -358,6 +367,7 @@ export default function ResultadosInspecciones() {
     setEquipoQuery("");
     setSoloNoConformes(false);
     setSelectedMonth("");
+    setSelectedIds([]);
     if (!password) return;
 
     setLoading(true);
@@ -388,7 +398,59 @@ export default function ResultadosInspecciones() {
     setPassword("");
     setPasswordInput("");
     setData([]);
+    setSelectedIds([]);
     setError("");
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const seleccionarVisibles = () => {
+    setSelectedIds(visibleIds);
+  };
+
+  const limpiarSeleccion = () => {
+    setSelectedIds([]);
+  };
+
+  const eliminarSeleccionadas = async () => {
+    if (!password || selectedIds.length === 0) return;
+
+    const confirmed = window.confirm(
+      `¿Seguro que deseas eliminar ${selectedIds.length} tarjeta(s) seleccionada(s)?`
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setError("");
+
+    try {
+      const response = await fetch(API_ENDPOINT, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "x-results-password": password,
+        },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(payload?.error ?? "No se pudieron eliminar las tarjetas seleccionadas.");
+      }
+
+      const selectedSet = new Set(selectedIds);
+      setData((prev) => prev.filter((item) => !selectedSet.has(item.id)));
+      setSelectedIds([]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Error inesperado.";
+      setError(message);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -700,6 +762,38 @@ export default function ResultadosInspecciones() {
             </article>
           </section>
 
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-slate-700">
+                Tarjetas seleccionadas: <span className="font-semibold">{selectedIds.length}</span>
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={seleccionarVisibles}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Seleccionar visibles
+                </button>
+                <button
+                  type="button"
+                  onClick={limpiarSeleccion}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Limpiar selección
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedIds.length === 0 || deleting}
+                  onClick={eliminarSeleccionadas}
+                  className="rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {deleting ? "Eliminando..." : "Eliminar seleccionadas"}
+                </button>
+              </div>
+            </div>
+          </section>
+
           <section className="space-y-4">
             {Object.entries(datosPorArea).map(([areaNombre, inspecciones]) => (
               <article
@@ -713,13 +807,28 @@ export default function ResultadosInspecciones() {
                   {inspecciones.map((inspeccion) => (
                     <div
                       key={inspeccion.id}
-                      className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                      className={`rounded-xl border bg-slate-50 p-4 ${
+                        selectedIds.includes(inspeccion.id)
+                          ? "border-blue-300 ring-2 ring-blue-100"
+                          : "border-slate-200"
+                      }`}
                     >
                       <div className="mb-2 flex items-center justify-between">
                         <p className="font-semibold text-slate-800">Fecha: {inspeccion.fecha}</p>
-                        <p className="text-xs text-slate-500">
-                          {new Date(inspeccion.created_at).toLocaleString("es-VE")}
-                        </p>
+                        <div className="flex items-center gap-3">
+                          <label className="flex items-center gap-1 text-xs text-slate-600">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.includes(inspeccion.id)}
+                              onChange={() => toggleSelect(inspeccion.id)}
+                              className="h-4 w-4 rounded border-slate-300"
+                            />
+                            Seleccionar
+                          </label>
+                          <p className="text-xs text-slate-500">
+                            {new Date(inspeccion.created_at).toLocaleString("es-VE")}
+                          </p>
+                        </div>
                       </div>
 
                       <div className="space-y-2">
