@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { AREAS_CONFIG, EstadoAspecto } from "../data/areas-config";
 
@@ -151,10 +152,20 @@ export default function FormInspeccionPreoperativa() {
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-4 md:p-6">
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-        <h1 className="text-xl font-semibold text-slate-800 md:text-2xl">
-          Inspección preoperativa
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">Registro diario por área y equipos</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold text-slate-800 md:text-2xl">
+              Inspección preoperativa
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">Registro diario por área y equipos</p>
+          </div>
+          <Link
+            href="/resultados"
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Ver resultados
+          </Link>
+        </div>
       </section>
 
       <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
