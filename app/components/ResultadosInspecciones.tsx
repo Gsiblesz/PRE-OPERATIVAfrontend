@@ -45,6 +45,7 @@ type Inspeccion = {
   id: string;
   fecha: string;
   area: string;
+  responsable?: string;
   evaluacion_equipos: EquipoEvaluado[];
   created_at: string;
 };
@@ -60,6 +61,7 @@ export default function ResultadosInspecciones() {
   const [to, setTo] = useState("");
   const [equipoQuery, setEquipoQuery] = useState("");
   const [soloNoConformes, setSoloNoConformes] = useState(false);
+  const [timeGranularity, setTimeGranularity] = useState<"semanal" | "mensual">("mensual");
   const [selectedMonth, setSelectedMonth] = useState("");
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
   const [data, setData] = useState<Inspeccion[]>([]);
@@ -102,6 +104,17 @@ export default function ResultadosInspecciones() {
   const resumen = useMemo(() => {
     const totalInspecciones = dataFiltrada.length;
     const totalEquipos = dataFiltrada.reduce((acc, row) => acc + row.evaluacion_equipos.length, 0);
+    const totalConformes = dataFiltrada.reduce(
+      (acc, row) =>
+        acc +
+        row.evaluacion_equipos.reduce(
+          (equiposAcc, equipo) =>
+            equiposAcc +
+            equipo.aspectos.filter((aspecto) => aspecto.estado === "conforme").length,
+          0
+        ),
+      0
+    );
     const totalNoConformes = dataFiltrada.reduce(
       (acc, row) =>
         acc +
@@ -123,6 +136,7 @@ export default function ResultadosInspecciones() {
     return {
       totalInspecciones,
       totalEquipos,
+      totalConformes,
       totalNoConformes,
       inspeccionesConIncidencias,
       tasaIncidencia:
@@ -243,6 +257,94 @@ export default function ResultadosInspecciones() {
 
     return { total, slices };
   }, [incidenciasPorArea]);
+
+  const donutConformidad = useMemo(() => {
+    const totalConformes = resumen.totalConformes;
+    const totalNoConformes = resumen.totalNoConformes;
+    const total = totalConformes + totalNoConformes;
+
+    if (total === 0) {
+      return {
+        total,
+        conformes: 0,
+        noConformes: 0,
+      };
+    }
+
+    return {
+      total,
+      conformes: Math.round((totalConformes / total) * 100),
+      noConformes: Math.round((totalNoConformes / total) * 100),
+    };
+  }, [resumen.totalConformes, resumen.totalNoConformes]);
+
+  const xBarData = useMemo(() => {
+    const groups = new Map<string, { label: string; totalNoConformes: number; inspecciones: number; startDate: Date }>();
+
+    dataFiltrada.forEach((row) => {
+      const rowDate = new Date(`${row.fecha}T00:00:00`);
+      const noConformes = row.evaluacion_equipos.reduce(
+        (eqAcc, equipo) =>
+          eqAcc + equipo.aspectos.filter((aspecto) => aspecto.estado === "no_conforme").length,
+        0
+      );
+
+      let key = "";
+      let label = "";
+      let startDate = new Date(rowDate);
+
+      if (timeGranularity === "mensual") {
+        const month = String(rowDate.getMonth() + 1).padStart(2, "0");
+        key = `${rowDate.getFullYear()}-${month}`;
+        label = `${MONTH_OPTIONS[rowDate.getMonth()].label} ${rowDate.getFullYear()}`;
+        startDate = new Date(rowDate.getFullYear(), rowDate.getMonth(), 1);
+      } else {
+        const day = rowDate.getDay();
+        const diffToMonday = day === 0 ? -6 : 1 - day;
+        const monday = new Date(rowDate);
+        monday.setDate(rowDate.getDate() + diffToMonday);
+
+        const weekYear = monday.getFullYear();
+        const weekMonth = String(monday.getMonth() + 1).padStart(2, "0");
+        const weekDay = String(monday.getDate()).padStart(2, "0");
+
+        key = `${weekYear}-${weekMonth}-${weekDay}`;
+        label = `Sem ${weekDay}/${weekMonth}`;
+        startDate = monday;
+      }
+
+      const existing = groups.get(key);
+      if (existing) {
+        existing.totalNoConformes += noConformes;
+        existing.inspecciones += 1;
+      } else {
+        groups.set(key, {
+          label,
+          totalNoConformes: noConformes,
+          inspecciones: 1,
+          startDate,
+        });
+      }
+    });
+
+    const ordered = Array.from(groups.values())
+      .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+      .map((group) => ({
+        label: group.label,
+        promedio: Number((group.totalNoConformes / group.inspecciones).toFixed(2)),
+      }));
+
+    const last12 = ordered.slice(-12);
+    const globalMean =
+      last12.length > 0
+        ? Number((last12.reduce((acc, item) => acc + item.promedio, 0) / last12.length).toFixed(2))
+        : 0;
+
+    return {
+      points: last12,
+      globalMean,
+    };
+  }, [dataFiltrada, timeGranularity]);
 
   const aplicarMes = async (monthValue: string) => {
     setSelectedMonth(monthValue);
@@ -696,18 +798,33 @@ export default function ResultadosInspecciones() {
 
           <section className="grid gap-3 lg:grid-cols-2">
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-              <h2 className="text-base font-semibold text-slate-800">
-                Comparativo mensual ({selectedYear})
-              </h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-base font-semibold text-slate-800">
+                  Gráfico X-bar (promedios en tiempo t)
+                </h2>
+                <select
+                  value={timeGranularity}
+                  onChange={(event) =>
+                    setTimeGranularity(event.target.value as "semanal" | "mensual")
+                  }
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                >
+                  <option value="mensual">Mensual</option>
+                  <option value="semanal">Semanal</option>
+                </select>
+              </div>
+              <p className="mt-1 text-sm text-slate-500">
+                Promedio de no conformidades por inspección ({timeGranularity})
+              </p>
               <div className="mt-3 space-y-2">
-                {comparativoMensual.map((item) => {
-                  const max = Math.max(...comparativoMensual.map((month) => month.total), 1);
-                  const width = Math.max(4, Math.round((item.total / max) * 100));
+                {xBarData.points.map((item) => {
+                  const max = Math.max(...xBarData.points.map((point) => point.promedio), 1);
+                  const width = Math.max(4, Math.round((item.promedio / max) * 100));
                   return (
-                    <div key={item.month}>
+                    <div key={item.label}>
                       <div className="mb-1 flex items-center justify-between text-sm text-slate-600">
-                        <span>{item.month}</span>
-                        <span>{item.total}</span>
+                        <span>{item.label}</span>
+                        <span>{item.promedio}</span>
                       </div>
                       <div className="h-2 rounded-full bg-slate-100">
                         <div className="h-2 rounded-full bg-blue-400" style={{ width: `${width}%` }} />
@@ -715,9 +832,69 @@ export default function ResultadosInspecciones() {
                     </div>
                   );
                 })}
+                {xBarData.points.length === 0 ? (
+                  <p className="text-sm text-slate-500">Sin datos para el gráfico X-bar.</p>
+                ) : (
+                  <p className="text-sm text-slate-600">
+                    Media global (línea X): <span className="font-semibold">{xBarData.globalMean}</span>
+                  </p>
+                )}
               </div>
             </article>
 
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+              <h2 className="text-base font-semibold text-slate-800">Torta % Conformes vs No conformes</h2>
+              <div className="mt-3 flex flex-col items-center gap-4 md:flex-row md:items-start">
+                <svg viewBox="0 0 36 36" className="h-44 w-44 -rotate-90">
+                  <circle cx="18" cy="18" r="15.9155" fill="none" stroke="currentColor" className="text-slate-200" strokeWidth="4" />
+                  <circle
+                    cx="18"
+                    cy="18"
+                    r="15.9155"
+                    fill="none"
+                    stroke="currentColor"
+                    className="text-emerald-500"
+                    strokeWidth="4"
+                    pathLength={100}
+                    strokeDasharray={`${donutConformidad.conformes} ${100 - donutConformidad.conformes}`}
+                    strokeDashoffset={100}
+                  />
+                  <circle
+                    cx="18"
+                    cy="18"
+                    r="15.9155"
+                    fill="none"
+                    stroke="currentColor"
+                    className="text-rose-500"
+                    strokeWidth="4"
+                    pathLength={100}
+                    strokeDasharray={`${donutConformidad.noConformes} ${100 - donutConformidad.noConformes}`}
+                    strokeDashoffset={100 - donutConformidad.conformes}
+                  />
+                </svg>
+
+                <div className="w-full space-y-2 text-sm">
+                  <div className="flex items-center justify-between gap-2 text-slate-700">
+                    <div className="flex items-center gap-2">
+                      <span className="h-3 w-3 rounded-full bg-emerald-500" />
+                      <span>Conformes</span>
+                    </div>
+                    <span className="text-slate-600">{donutConformidad.conformes}%</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-slate-700">
+                    <div className="flex items-center gap-2">
+                      <span className="h-3 w-3 rounded-full bg-rose-500" />
+                      <span>No conformes</span>
+                    </div>
+                    <span className="text-slate-600">{donutConformidad.noConformes}%</span>
+                  </div>
+                  <p className="text-slate-500">Total aspectos evaluados: {donutConformidad.total}</p>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section className="grid gap-3 lg:grid-cols-1">
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
               <h2 className="text-base font-semibold text-slate-800">Gráfico de torta por área</h2>
               <div className="mt-3 flex flex-col items-center gap-4 md:flex-row md:items-start">
@@ -814,7 +991,12 @@ export default function ResultadosInspecciones() {
                       }`}
                     >
                       <div className="mb-2 flex items-center justify-between">
-                        <p className="font-semibold text-slate-800">Fecha: {inspeccion.fecha}</p>
+                        <div>
+                          <p className="font-semibold text-slate-800">Fecha: {inspeccion.fecha}</p>
+                          {inspeccion.responsable ? (
+                            <p className="text-xs text-slate-600">Responsable: {inspeccion.responsable}</p>
+                          ) : null}
+                        </div>
                         <div className="flex items-center gap-3">
                           <label className="flex items-center gap-1 text-xs text-slate-600">
                             <input

@@ -22,6 +22,7 @@ type EstadoAspectoUI = {
 
 export default function FormInspeccionPreoperativa() {
   const [area, setArea] = useState("");
+  const [responsable, setResponsable] = useState("");
   const [equipoId, setEquipoId] = useState("");
   const [aspectosUI, setAspectosUI] = useState<Record<string, EstadoAspectoUI>>({});
   const [observacionEquipo, setObservacionEquipo] = useState("");
@@ -41,7 +42,9 @@ export default function FormInspeccionPreoperativa() {
 
   const equiposTotalesArea = equiposArea.length;
   const equiposEvaluados = evaluaciones.length;
-  const areaCompleta = area !== "" && equiposTotalesArea > 0 && equiposEvaluados === equiposTotalesArea;
+  const responsableValido = responsable.trim().length > 0;
+  const areaCompleta =
+    area !== "" && responsableValido && equiposTotalesArea > 0 && equiposEvaluados === equiposTotalesArea;
 
   const onAreaChange = (nextArea: string) => {
     setArea(nextArea);
@@ -113,7 +116,7 @@ export default function FormInspeccionPreoperativa() {
   };
 
   const finalizarArea = async () => {
-    if (!area || evaluaciones.length === 0) return;
+    if (!area || !responsableValido || evaluaciones.length === 0) return;
 
     const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
     const endpoint = apiBaseUrl
@@ -123,6 +126,7 @@ export default function FormInspeccionPreoperativa() {
     const payload = {
       fecha: new Date().toISOString().slice(0, 10),
       area,
+      responsable: responsable.trim(),
       evaluacion_equipos: evaluaciones,
     };
 
@@ -189,12 +193,23 @@ export default function FormInspeccionPreoperativa() {
       </section>
 
       <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-        <h2 className="text-lg font-medium text-slate-800">Paso 2: Selecciona el equipo</h2>
+        <h2 className="text-lg font-medium text-slate-800">Paso 2: Responsable</h2>
+        <input
+          type="text"
+          value={responsable}
+          onChange={(event) => setResponsable(event.target.value)}
+          placeholder="Nombre del responsable"
+          className="w-full rounded-xl border border-slate-300 p-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
+        />
+      </section>
+
+      <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+        <h2 className="text-lg font-medium text-slate-800">Paso 3: Selecciona el equipo</h2>
         <select
           className="w-full rounded-xl border border-slate-300 p-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:bg-slate-100"
           value={equipoId}
           onChange={(event) => onEquipoChange(event.target.value)}
-          disabled={!area}
+          disabled={!area || !responsableValido}
         >
           <option value="">Selecciona un equipo</option>
           {equiposArea.map((equipo) => {
@@ -211,7 +226,7 @@ export default function FormInspeccionPreoperativa() {
       {equipoSeleccionado ? (
         <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
           <h2 className="text-lg font-medium text-slate-800">
-            Paso 3: Evalúa aspectos de {equipoSeleccionado.nombre}
+            Paso 4: Evalúa aspectos de {equipoSeleccionado.nombre}
           </h2>
 
           <div className="space-y-3">
@@ -282,7 +297,7 @@ export default function FormInspeccionPreoperativa() {
             </h3>
             {!areaCompleta && area ? (
               <p className="mt-1 text-sm text-slate-500">
-                Completa todos los equipos del área para habilitar el guardado final.
+                Completa responsable y todos los equipos del área para habilitar el guardado final.
               </p>
             ) : null}
           </div>
