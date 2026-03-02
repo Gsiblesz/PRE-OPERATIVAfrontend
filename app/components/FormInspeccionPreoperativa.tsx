@@ -165,7 +165,9 @@ export default function FormInspeccionPreoperativa() {
             <h1 className="text-xl font-semibold text-slate-800 md:text-2xl">
               Inspección preoperativa
             </h1>
-            <p className="mt-1 text-sm text-slate-500">Registro diario por área y equipos</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Pre-Operativa: La pre operativa en Pan de Tata para identificar incidencias y detectar no conformidades por área y equipo
+            </p>
           </div>
           <Link
             href="/resultados"

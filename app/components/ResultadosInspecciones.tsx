@@ -562,7 +562,7 @@ export default function ResultadosInspecciones() {
           <div>
             <h1 className="text-xl font-semibold text-slate-800 md:text-2xl">Resultados de inspecciones</h1>
             <p className="mt-1 text-sm text-slate-500">
-              La pre operativo en Pan de Tata para identificar incidencias y detectar no conformidades por área y equipo
+              Pre-Operativa: La pre operativa en Pan de Tata para identificar incidencias y detectar no conformidades por área y equipo
             </p>
           </div>
           <Link
