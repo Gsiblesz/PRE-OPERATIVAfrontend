@@ -3,6 +3,30 @@
 import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 
+const MONTH_OPTIONS = [
+  { value: "01", label: "Ene" },
+  { value: "02", label: "Feb" },
+  { value: "03", label: "Mar" },
+  { value: "04", label: "Abr" },
+  { value: "05", label: "May" },
+  { value: "06", label: "Jun" },
+  { value: "07", label: "Jul" },
+  { value: "08", label: "Ago" },
+  { value: "09", label: "Sep" },
+  { value: "10", label: "Oct" },
+  { value: "11", label: "Nov" },
+  { value: "12", label: "Dic" },
+];
+
+const CHART_COLORS = [
+  { stroke: "text-rose-500", dot: "bg-rose-500" },
+  { stroke: "text-amber-500", dot: "bg-amber-500" },
+  { stroke: "text-blue-500", dot: "bg-blue-500" },
+  { stroke: "text-emerald-500", dot: "bg-emerald-500" },
+  { stroke: "text-purple-500", dot: "bg-purple-500" },
+  { stroke: "text-cyan-500", dot: "bg-cyan-500" },
+];
+
 type EstadoAspecto = "conforme" | "no_conforme";
 
 type AspectoEvaluado = {
@@ -36,6 +60,8 @@ export default function ResultadosInspecciones() {
   const [to, setTo] = useState("");
   const [equipoQuery, setEquipoQuery] = useState("");
   const [soloNoConformes, setSoloNoConformes] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState("");
+  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
   const [data, setData] = useState<Inspeccion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -152,6 +178,119 @@ export default function ResultadosInspecciones() {
       .slice(0, 8);
   }, [dataFiltrada]);
 
+  const comparativoMensual = useMemo(() => {
+    const year = Number(selectedYear);
+    if (Number.isNaN(year)) return [] as Array<{ month: string; total: number }>;
+
+    const totals = new Array<number>(12).fill(0);
+
+    dataFiltrada.forEach((row) => {
+      const rowDate = new Date(`${row.fecha}T00:00:00`);
+      if (rowDate.getFullYear() !== year) return;
+
+      const monthIndex = rowDate.getMonth();
+      const noConformes = row.evaluacion_equipos.reduce(
+        (eqAcc, equipo) =>
+          eqAcc + equipo.aspectos.filter((aspecto) => aspecto.estado === "no_conforme").length,
+        0
+      );
+      totals[monthIndex] += noConformes;
+    });
+
+    return MONTH_OPTIONS.map((month, index) => ({ month: month.label, total: totals[index] }));
+  }, [dataFiltrada, selectedYear]);
+
+  const donutData = useMemo(() => {
+    const total = incidenciasPorArea.reduce((acc, item) => acc + item.total, 0);
+    if (total === 0) {
+      return {
+        total,
+        slices: [] as Array<{
+          areaNombre: string;
+          total: number;
+          strokeClass: string;
+          dotClass: string;
+          dash: number;
+          offset: number;
+        }>,
+      };
+    }
+
+    let accumulated = 0;
+    const slices = incidenciasPorArea.map((item, index) => {
+      const dash = (item.total / total) * 100;
+      const offset = 100 - accumulated;
+      accumulated += dash;
+
+      return {
+        areaNombre: item.areaNombre,
+        total: item.total,
+        strokeClass: CHART_COLORS[index % CHART_COLORS.length].stroke,
+        dotClass: CHART_COLORS[index % CHART_COLORS.length].dot,
+        dash,
+        offset,
+      };
+    });
+
+    return { total, slices };
+  }, [incidenciasPorArea]);
+
+  const aplicarMes = async (monthValue: string) => {
+    setSelectedMonth(monthValue);
+
+    if (!monthValue) {
+      setFrom("");
+      setTo("");
+      if (password) {
+        await cargarResultados(password, true);
+      }
+      return;
+    }
+
+    const year = Number(selectedYear);
+    const month = Number(monthValue);
+    if (Number.isNaN(year) || Number.isNaN(month)) return;
+
+    const startDate = new Date(Date.UTC(year, month - 1, 1));
+    const endDate = new Date(Date.UTC(year, month, 0));
+
+    const nextFrom = startDate.toISOString().slice(0, 10);
+    const nextTo = endDate.toISOString().slice(0, 10);
+
+    setFrom(nextFrom);
+    setTo(nextTo);
+
+    if (password) {
+      setLoading(true);
+      setError("");
+      try {
+        const params = new URLSearchParams();
+        if (area) params.set("area", area);
+        params.set("from", nextFrom);
+        params.set("to", nextTo);
+
+        const response = await fetch(`${API_ENDPOINT}?${params.toString()}`, {
+          method: "GET",
+          headers: {
+            "x-results-password": password,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error("No se pudo filtrar por mes.");
+        }
+
+        const payload = await response.json();
+        setData(payload.data ?? []);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Error inesperado.";
+        setError(message);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
   const cargarResultados = async (passwordValue: string, keepFilters = true) => {
     if (!API_BASE_URL) {
       setError("Falta configurar NEXT_PUBLIC_API_URL en Vercel.");
@@ -207,6 +346,7 @@ export default function ResultadosInspecciones() {
 
   const onFiltrar = async (event: FormEvent) => {
     event.preventDefault();
+    setSelectedMonth("");
     if (!password) return;
     await cargarResultados(password, true);
   };
@@ -217,6 +357,7 @@ export default function ResultadosInspecciones() {
     setTo("");
     setEquipoQuery("");
     setSoloNoConformes(false);
+    setSelectedMonth("");
     if (!password) return;
 
     setLoading(true);
@@ -372,6 +513,53 @@ export default function ResultadosInspecciones() {
               </div>
             </form>
 
+            <div className="mt-3 rounded-xl border border-slate-200 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-medium text-slate-700">Filtro rápido por mes</p>
+                <select
+                  value={selectedYear}
+                  onChange={(event) => setSelectedYear(event.target.value)}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                >
+                  <option value={String(new Date().getFullYear() - 1)}>
+                    {new Date().getFullYear() - 1}
+                  </option>
+                  <option value={String(new Date().getFullYear())}>{new Date().getFullYear()}</option>
+                  <option value={String(new Date().getFullYear() + 1)}>
+                    {new Date().getFullYear() + 1}
+                  </option>
+                </select>
+              </div>
+
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                <button
+                  type="button"
+                  onClick={() => aplicarMes("")}
+                  className={`shrink-0 rounded-lg border px-3 py-1.5 text-sm ${
+                    selectedMonth === ""
+                      ? "border-slate-500 bg-slate-100 text-slate-800"
+                      : "border-slate-300 bg-white text-slate-700"
+                  }`}
+                >
+                  Todo el año
+                </button>
+                {MONTH_OPTIONS.map((month) => (
+                  <button
+                    key={month.value}
+                    type="button"
+                    onClick={() => aplicarMes(month.value)}
+                    className={`shrink-0 rounded-lg border px-3 py-1.5 text-sm ${
+                      selectedMonth === month.value
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-slate-300 bg-white text-slate-700"
+                    }`}
+                  >
+                    {month.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
@@ -440,6 +628,74 @@ export default function ResultadosInspecciones() {
                 {topEquiposNoConformes.length === 0 ? (
                   <p className="text-sm text-slate-500">Sin equipos con no conformidades.</p>
                 ) : null}
+              </div>
+            </article>
+          </section>
+
+          <section className="grid gap-3 lg:grid-cols-2">
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+              <h2 className="text-base font-semibold text-slate-800">
+                Comparativo mensual ({selectedYear})
+              </h2>
+              <div className="mt-3 space-y-2">
+                {comparativoMensual.map((item) => {
+                  const max = Math.max(...comparativoMensual.map((month) => month.total), 1);
+                  const width = Math.max(4, Math.round((item.total / max) * 100));
+                  return (
+                    <div key={item.month}>
+                      <div className="mb-1 flex items-center justify-between text-sm text-slate-600">
+                        <span>{item.month}</span>
+                        <span>{item.total}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-100">
+                        <div className="h-2 rounded-full bg-blue-400" style={{ width: `${width}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+              <h2 className="text-base font-semibold text-slate-800">Gráfico de torta por área</h2>
+              <div className="mt-3 flex flex-col items-center gap-4 md:flex-row md:items-start">
+                <svg viewBox="0 0 36 36" className="h-44 w-44 -rotate-90">
+                  <circle cx="18" cy="18" r="15.9155" fill="none" stroke="currentColor" className="text-slate-200" strokeWidth="4" />
+                  {donutData.slices.map((slice) => (
+                    <circle
+                      key={slice.areaNombre}
+                      cx="18"
+                      cy="18"
+                      r="15.9155"
+                      fill="none"
+                      stroke="currentColor"
+                      className={slice.strokeClass}
+                      strokeWidth="4"
+                      pathLength={100}
+                      strokeDasharray={`${slice.dash} ${100 - slice.dash}`}
+                      strokeDashoffset={slice.offset}
+                    />
+                  ))}
+                </svg>
+
+                <div className="w-full space-y-2">
+                  {donutData.slices.map((slice) => {
+                    const percentage = donutData.total > 0 ? Math.round((slice.total / donutData.total) * 100) : 0;
+                    return (
+                      <div key={`legend-${slice.areaNombre}`} className="flex items-center justify-between gap-2 text-sm">
+                        <div className="flex items-center gap-2 text-slate-700">
+                          <span className={`h-3 w-3 rounded-full ${slice.dotClass}`} />
+                          <span>{slice.areaNombre}</span>
+                        </div>
+                        <span className="text-slate-600">{percentage}%</span>
+                      </div>
+                    );
+                  })}
+
+                  {donutData.slices.length === 0 ? (
+                    <p className="text-sm text-slate-500">Sin datos para gráfico de torta.</p>
+                  ) : null}
+                </div>
               </div>
             </article>
           </section>
