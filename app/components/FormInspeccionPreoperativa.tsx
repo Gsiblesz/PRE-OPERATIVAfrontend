@@ -39,6 +39,10 @@ export default function FormInspeccionPreoperativa() {
     [evaluaciones]
   );
 
+  const equiposTotalesArea = equiposArea.length;
+  const equiposEvaluados = evaluaciones.length;
+  const areaCompleta = area !== "" && equiposTotalesArea > 0 && equiposEvaluados === equiposTotalesArea;
+
   const onAreaChange = (nextArea: string) => {
     setArea(nextArea);
     setEquipoId("");
@@ -266,22 +270,32 @@ export default function FormInspeccionPreoperativa() {
             >
               Guardar equipo y evaluar otro
             </button>
-
-            <button
-              type="button"
-              onClick={finalizarArea}
-              className="rounded-xl bg-blue-600 px-4 py-2.5 font-medium text-white hover:bg-blue-500"
-            >
-              Finalizar Área
-            </button>
           </div>
         </section>
       ) : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-        <h3 className="text-base font-semibold text-slate-800">
-          Equipos guardados en esta área: {evaluaciones.length}
-        </h3>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-slate-800">
+              Equipos guardados en esta área: {equiposEvaluados} / {equiposTotalesArea}
+            </h3>
+            {!areaCompleta && area ? (
+              <p className="mt-1 text-sm text-slate-500">
+                Completa todos los equipos del área para habilitar el guardado final.
+              </p>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            onClick={finalizarArea}
+            disabled={!areaCompleta}
+            className="rounded-xl bg-blue-600 px-4 py-2.5 font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Guardar tarjeta completa del área
+          </button>
+        </div>
       </section>
     </main>
   );
