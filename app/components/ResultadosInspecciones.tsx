@@ -270,10 +270,6 @@ export default function ResultadosInspecciones() {
           values.totalAspectos > 0
             ? Math.round((values.conformes / values.totalAspectos) * 100)
             : 0,
-        noConformidad:
-          values.totalAspectos > 0
-            ? Math.round(((values.totalAspectos - values.conformes) / values.totalAspectos) * 100)
-            : 0,
       }))
       .sort((a, b) => b.cumplimiento - a.cumplimiento)
       .slice(0, 3);
@@ -1087,7 +1083,7 @@ export default function ResultadosInspecciones() {
               <p className="text-2xl font-semibold text-slate-800">{resumen.totalEquipos}</p>
             </article>
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Balance por área (positivo y negativo)</p>
+              <p className="text-sm text-slate-500">Eficiencia por área</p>
               <div className="mt-2 space-y-1.5">
                 {cumplimientoPorArea.map((item) => {
                   const estadoColor =
@@ -1107,8 +1103,7 @@ export default function ResultadosInspecciones() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-slate-500">{estadoTexto}</span>
-                        <span className="font-semibold text-emerald-700">+{item.cumplimiento}%</span>
-                        <span className="font-semibold text-rose-700">-{item.noConformidad}%</span>
+                        <span className="font-semibold text-emerald-700">{item.cumplimiento}%</span>
                       </div>
                     </div>
                   );
