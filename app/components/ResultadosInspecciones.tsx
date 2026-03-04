@@ -27,6 +27,32 @@ const CHART_COLORS = [
   { stroke: "text-cyan-500", dot: "bg-cyan-500" },
 ];
 
+const OBSERVATION_STOPWORDS = new Set([
+  "para",
+  "con",
+  "sin",
+  "una",
+  "uno",
+  "del",
+  "las",
+  "los",
+  "que",
+  "por",
+  "esta",
+  "este",
+  "equipo",
+  "area",
+  "área",
+  "falta",
+  "tiene",
+  "hay",
+  "como",
+  "sobre",
+  "desde",
+  "entre",
+  "operativa",
+]);
+
 type EstadoAspecto = "conforme" | "no_conforme";
 
 type AspectoEvaluado = {
@@ -195,8 +221,128 @@ export default function ResultadosInspecciones() {
             ? Math.round((values.conformes / values.totalAspectos) * 100)
             : 0,
       }))
-      .sort((a, b) => a.porcentaje - b.porcentaje)
+      .sort((a, b) => b.porcentaje - a.porcentaje)
       .slice(0, 3);
+  }, [dataFiltrada]);
+
+  const patronesPorArea = useMemo(() => {
+    const grouped = dataFiltrada.reduce<
+      Record<
+        string,
+        {
+          inspecciones: number;
+          totalAspectos: number;
+          conformes: number;
+          noConformes: number;
+          observaciones: number;
+        }
+      >
+    >((acc, row) => {
+      if (!acc[row.area]) {
+        acc[row.area] = {
+          inspecciones: 0,
+          totalAspectos: 0,
+          conformes: 0,
+          noConformes: 0,
+          observaciones: 0,
+        };
+      }
+
+      acc[row.area].inspecciones += 1;
+
+      row.evaluacion_equipos.forEach((equipo) => {
+        const conformesEquipo = equipo.aspectos.filter((aspecto) => aspecto.estado === "conforme").length;
+        const noConformesEquipo = equipo.aspectos.filter(
+          (aspecto) => aspecto.estado === "no_conforme"
+        ).length;
+
+        acc[row.area].totalAspectos += equipo.aspectos.length;
+        acc[row.area].conformes += conformesEquipo;
+        acc[row.area].noConformes += noConformesEquipo;
+        if (equipo.observacionEquipo?.trim()) {
+          acc[row.area].observaciones += 1;
+        }
+      });
+
+      return acc;
+    }, {});
+
+    return Object.entries(grouped)
+      .map(([areaNombre, values]) => {
+        const cumplimiento =
+          values.totalAspectos > 0 ? Math.round((values.conformes / values.totalAspectos) * 100) : 0;
+        const incidencia =
+          values.totalAspectos > 0 ? Math.round((values.noConformes / values.totalAspectos) * 100) : 0;
+
+        return {
+          areaNombre,
+          ...values,
+          cumplimiento,
+          incidencia,
+        };
+      })
+      .sort((a, b) => b.cumplimiento - a.cumplimiento);
+  }, [dataFiltrada]);
+
+  const observacionesDashboard = useMemo(() => {
+    const observations: Array<{ area: string; equipo: string; texto: string; fecha: string }> = [];
+
+    dataFiltrada.forEach((row) => {
+      row.evaluacion_equipos.forEach((equipo) => {
+        const texto = equipo.observacionEquipo?.trim();
+        if (!texto) return;
+
+        observations.push({
+          area: row.area,
+          equipo: equipo.equipoNombre,
+          texto,
+          fecha: row.fecha,
+        });
+      });
+    });
+
+    const porAreaMap = observations.reduce<Record<string, number>>((acc, observation) => {
+      acc[observation.area] = (acc[observation.area] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    const porArea = Object.entries(porAreaMap)
+      .map(([areaNombre, total]) => ({ areaNombre, total }))
+      .sort((a, b) => b.total - a.total);
+
+    const topKeywordsMap = observations.reduce<Record<string, number>>((acc, observation) => {
+      const normalized = observation.texto
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+
+      normalized
+        .split(/[^a-z0-9]+/)
+        .filter((token) => token.length >= 4)
+        .filter((token) => !OBSERVATION_STOPWORDS.has(token))
+        .forEach((token) => {
+          acc[token] = (acc[token] ?? 0) + 1;
+        });
+
+      return acc;
+    }, {});
+
+    const topKeywords = Object.entries(topKeywordsMap)
+      .map(([token, total]) => ({ token, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 6);
+
+    const recientes = observations
+      .slice()
+      .sort((a, b) => new Date(`${b.fecha}T00:00:00`).getTime() - new Date(`${a.fecha}T00:00:00`).getTime())
+      .slice(0, 5);
+
+    return {
+      total: observations.length,
+      porArea,
+      topKeywords,
+      recientes,
+    };
   }, [dataFiltrada]);
 
   const datosPorArea = useMemo(() => {
@@ -814,7 +960,7 @@ export default function ResultadosInspecciones() {
               <p className="text-2xl font-semibold text-slate-800">{resumen.totalInspecciones}</p>
             </article>
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Inspecciones con incidencias</p>
+              <p className="text-sm text-slate-500">Preoperativas con incidencias</p>
               <p className="text-2xl font-semibold text-amber-700">{resumen.inspeccionesConIncidencias}</p>
             </article>
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -829,7 +975,7 @@ export default function ResultadosInspecciones() {
               <p className="text-2xl font-semibold text-slate-800">{resumen.totalEquipos}</p>
             </article>
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Cumplimiento por área (más deficiencias)</p>
+              <p className="text-sm text-slate-500">Cumplimiento por área (mayor eficiencia)</p>
               <div className="mt-2 space-y-1.5">
                 {cumplimientoPorArea.map((item) => {
                   const estadoColor =
@@ -985,9 +1131,87 @@ export default function ResultadosInspecciones() {
             {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
           </section>
 
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm md:p-6">
+            <h2 className="text-base font-semibold text-slate-800">Vista rápida del equipo</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Panel operativo para ver en segundos qué áreas cumplen más, dónde se concentran las incidencias y qué observaciones se repiten.
+            </p>
+          </section>
+
+          <section className="grid gap-3 lg:grid-cols-2">
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+              <h2 className="text-base font-semibold text-slate-800">Patrones por área</h2>
+              <p className="mt-1 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
+                Ordenado por mayor cumplimiento. Sirve para comparar eficiencia e incidencia de cada área en una sola vista.
+              </p>
+              <div className="mt-3 space-y-2">
+                {patronesPorArea.map((item) => (
+                  <div key={item.areaNombre} className="rounded-lg border border-slate-200 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-800">{item.areaNombre}</p>
+                      <p className="text-sm font-semibold text-emerald-700">{item.cumplimiento}% cumplimiento</p>
+                    </div>
+                    <div className="mt-1 grid grid-cols-3 gap-2 text-xs text-slate-600">
+                      <p>Incidencia: {item.incidencia}%</p>
+                      <p>Preoperativas: {item.inspecciones}</p>
+                      <p>Observaciones: {item.observaciones}</p>
+                    </div>
+                  </div>
+                ))}
+                {patronesPorArea.length === 0 ? (
+                  <p className="text-sm text-slate-500">Sin datos de patrones por área.</p>
+                ) : null}
+              </div>
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+              <h2 className="text-base font-semibold text-slate-800">Observaciones clave</h2>
+              <p className="mt-1 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
+                Resume las observaciones para no perder contexto operativo: volumen por área, palabras repetidas y notas recientes.
+              </p>
+              <p className="mt-3 text-sm text-slate-700">
+                Total de observaciones registradas: <span className="font-semibold">{observacionesDashboard.total}</span>
+              </p>
+
+              <div className="mt-2 space-y-1.5">
+                {observacionesDashboard.porArea.slice(0, 3).map((item) => (
+                  <div key={item.areaNombre} className="flex items-center justify-between text-sm">
+                    <span className="text-slate-700">{item.areaNombre}</span>
+                    <span className="font-semibold text-slate-800">{item.total}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {observacionesDashboard.topKeywords.map((item) => (
+                  <span
+                    key={item.token}
+                    className="rounded-full border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                  >
+                    {item.token} ({item.total})
+                  </span>
+                ))}
+                {observacionesDashboard.topKeywords.length === 0 ? (
+                  <p className="text-sm text-slate-500">No hay palabras clave de observaciones.</p>
+                ) : null}
+              </div>
+
+              <div className="mt-3 space-y-1.5">
+                {observacionesDashboard.recientes.map((item, index) => (
+                  <p key={`${item.area}-${item.equipo}-${index}`} className="line-clamp-1 text-xs text-slate-600">
+                    {item.fecha} · {item.area} · {item.equipo}: {item.texto}
+                  </p>
+                ))}
+              </div>
+            </article>
+          </section>
+
           <section className="grid gap-3 lg:grid-cols-2">
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
               <h2 className="text-base font-semibold text-slate-800">No conformidades por área</h2>
+              <p className="mt-1 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
+                Muestra las áreas con mayor volumen de no conformidades para priorizar acciones correctivas.
+              </p>
               <div className="mt-3 space-y-2">
                 {incidenciasPorArea.map((item) => {
                   const max = incidenciasPorArea[0]?.total ?? 1;
@@ -1012,6 +1236,9 @@ export default function ResultadosInspecciones() {
 
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
               <h2 className="text-base font-semibold text-slate-800">Top equipos con no conformidades</h2>
+              <p className="mt-1 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
+                Identifica los equipos más críticos para seguimiento inmediato del equipo operativo.
+              </p>
               <div className="mt-3 space-y-2">
                 {topEquiposNoConformes.map((item) => {
                   const max = topEquiposNoConformes[0]?.total ?? 1;
@@ -1035,38 +1262,19 @@ export default function ResultadosInspecciones() {
             </article>
           </section>
 
-          <section className="grid gap-3 lg:grid-cols-2">
-            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-semibold text-slate-800">Control semanal de % cumplimiento</h2>
-                <select
-                  value={controlArea}
-                  onChange={(event) => setControlArea(event.target.value)}
-                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
-                >
-                  {areasDisponibles.map((areaItem) => (
-                    <option key={areaItem} value={areaItem}>
-                      {areaItem}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <p className="mt-1 text-sm text-slate-500">
-                Área: {controlArea || "Sin área seleccionada"} · Últimos 12 periodos semanales
-              </p>
-              {renderControlChart(controlChartData.semanal, "semanales")}
-            </article>
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm md:p-6">
+            <h2 className="text-base font-semibold text-slate-800">Análisis estadístico</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              En esta sección los gráficos muestran comportamiento del proceso con límites de control y distribución porcentual para detectar variaciones fuera de control.
+            </p>
+          </section>
 
-            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-              <h2 className="text-base font-semibold text-slate-800">Control mensual de % cumplimiento</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Área: {controlArea || "Sin área seleccionada"} · Últimos 12 periodos mensuales
-              </p>
-              {renderControlChart(controlChartData.mensual, "mensuales")}
-            </article>
-
+          <section className="grid gap-3 lg:grid-cols-1">
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
               <h2 className="text-base font-semibold text-slate-800">Torta % Conformes vs No conformes</h2>
+              <p className="mt-1 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
+                Mide la proporción global de cumplimiento vs incumplimiento para evaluar salud general del proceso.
+              </p>
               <div className="mt-3 flex flex-col items-center gap-4 md:flex-row md:items-start">
                 <svg viewBox="0 0 36 36" className="h-44 w-44 -rotate-90">
                   <circle cx="18" cy="18" r="15.9155" fill="none" stroke="currentColor" className="text-slate-200" strokeWidth="4" />
@@ -1120,6 +1328,9 @@ export default function ResultadosInspecciones() {
           <section className="grid gap-3 lg:grid-cols-1">
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
               <h2 className="text-base font-semibold text-slate-800">Gráfico de torta por área</h2>
+              <p className="mt-1 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
+                Distribuye el peso de no conformidades entre áreas para ver concentración del problema.
+              </p>
               <div className="mt-3 flex flex-col items-center gap-4 md:flex-row md:items-start">
                 <svg viewBox="0 0 36 36" className="h-44 w-44 -rotate-90">
                   <circle cx="18" cy="18" r="15.9155" fill="none" stroke="currentColor" className="text-slate-200" strokeWidth="4" />
@@ -1159,6 +1370,43 @@ export default function ResultadosInspecciones() {
                   ) : null}
                 </div>
               </div>
+            </article>
+          </section>
+
+          <section className="grid gap-3 lg:grid-cols-2">
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base font-semibold text-slate-800">Control semanal de % cumplimiento</h2>
+                <select
+                  value={controlArea}
+                  onChange={(event) => setControlArea(event.target.value)}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                >
+                  {areasDisponibles.map((areaItem) => (
+                    <option key={areaItem} value={areaItem}>
+                      {areaItem}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="mt-1 text-sm text-slate-500">
+                Área: {controlArea || "Sin área seleccionada"} · Últimos 12 periodos semanales
+              </p>
+              <p className="mt-1 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
+                Gráfico de control semanal con límites superior e inferior para detectar variaciones fuera de control.
+              </p>
+              {renderControlChart(controlChartData.semanal, "semanales")}
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+              <h2 className="text-base font-semibold text-slate-800">Control mensual de % cumplimiento</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Área: {controlArea || "Sin área seleccionada"} · Últimos 12 periodos mensuales
+              </p>
+              <p className="mt-1 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
+                Gráfico de control mensual para evaluar estabilidad del cumplimiento en el mediano plazo.
+              </p>
+              {renderControlChart(controlChartData.mensual, "mensuales")}
             </article>
           </section>
 
