@@ -1292,19 +1292,30 @@ export default function ResultadosInspecciones() {
                 Ordenado por mayor cumplimiento. Sirve para comparar eficiencia e incidencia de cada área en una sola vista.
               </p>
               <div className="mt-3 space-y-2">
-                {patronesPorArea.map((item) => (
-                  <div key={item.areaNombre} className="rounded-lg border border-slate-200 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-semibold text-slate-800">{item.areaNombre}</p>
-                      <p className="text-sm font-semibold text-emerald-700">{item.cumplimiento}% cumplimiento</p>
+                {patronesPorArea.map((item) => {
+                  const cumplimientoColor =
+                    item.cumplimiento < 50
+                      ? "text-rose-700"
+                      : item.cumplimiento <= 75
+                        ? "text-amber-700"
+                        : "text-emerald-700";
+
+                  return (
+                    <div key={item.areaNombre} className="rounded-lg border border-slate-200 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-slate-800">{item.areaNombre}</p>
+                        <p className={`text-sm font-semibold ${cumplimientoColor}`}>
+                          {item.cumplimiento}% cumplimiento
+                        </p>
+                      </div>
+                      <div className="mt-1 grid grid-cols-3 gap-2 text-xs text-slate-600">
+                        <p>Incidencia: {item.incidencia}%</p>
+                        <p>Preoperativas: {item.inspecciones}</p>
+                        <p>Observaciones: {item.observaciones}</p>
+                      </div>
                     </div>
-                    <div className="mt-1 grid grid-cols-3 gap-2 text-xs text-slate-600">
-                      <p>Incidencia: {item.incidencia}%</p>
-                      <p>Preoperativas: {item.inspecciones}</p>
-                      <p>Observaciones: {item.observaciones}</p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {patronesPorArea.length === 0 ? (
                   <p className="text-sm text-slate-500">Sin datos de patrones por área.</p>
                 ) : null}
