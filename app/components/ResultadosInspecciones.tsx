@@ -162,11 +162,41 @@ export default function ResultadosInspecciones() {
       totalConformes,
       totalNoConformes,
       inspeccionesConIncidencias,
-      tasaIncidencia:
-        totalInspecciones > 0
-          ? Math.round((inspeccionesConIncidencias / totalInspecciones) * 100)
+      porcentajeCumplimiento:
+        totalConformes + totalNoConformes > 0
+          ? Math.round((totalConformes / (totalConformes + totalNoConformes)) * 100)
           : 0,
     };
+  }, [dataFiltrada]);
+
+  const cumplimientoPorArea = useMemo(() => {
+    const grouped = dataFiltrada.reduce<
+      Record<string, { conformes: number; totalAspectos: number }>
+    >((acc, row) => {
+      if (!acc[row.area]) {
+        acc[row.area] = { conformes: 0, totalAspectos: 0 };
+      }
+
+      row.evaluacion_equipos.forEach((equipo) => {
+        acc[row.area].totalAspectos += equipo.aspectos.length;
+        acc[row.area].conformes += equipo.aspectos.filter(
+          (aspecto) => aspecto.estado === "conforme"
+        ).length;
+      });
+
+      return acc;
+    }, {});
+
+    return Object.entries(grouped)
+      .map(([areaNombre, values]) => ({
+        areaNombre,
+        porcentaje:
+          values.totalAspectos > 0
+            ? Math.round((values.conformes / values.totalAspectos) * 100)
+            : 0,
+      }))
+      .sort((a, b) => a.porcentaje - b.porcentaje)
+      .slice(0, 3);
   }, [dataFiltrada]);
 
   const datosPorArea = useMemo(() => {
@@ -601,6 +631,142 @@ export default function ResultadosInspecciones() {
     }
   };
 
+  const renderControlChart = (chartData: ControlChartData, periodLabel: string) => {
+    if (chartData.points.length === 0) {
+      return <p className="text-sm text-slate-500">Sin datos {periodLabel} para el gráfico de control.</p>;
+    }
+
+    const chartWidth = 640;
+    const chartHeight = 260;
+    const margin = { top: 16, right: 16, bottom: 52, left: 36 };
+    const plotWidth = chartWidth - margin.left - margin.right;
+    const plotHeight = chartHeight - margin.top - margin.bottom;
+    const labelStep = Math.max(1, Math.ceil(chartData.points.length / 6));
+
+    const getX = (index: number) => {
+      if (chartData.points.length === 1) {
+        return margin.left + plotWidth / 2;
+      }
+
+      return margin.left + (index * plotWidth) / (chartData.points.length - 1);
+    };
+
+    const getY = (value: number) => margin.top + ((100 - value) * plotHeight) / 100;
+
+    const linePath = chartData.points
+      .map((point, index) => `${getX(index)},${getY(point.cumplimientoPct)}`)
+      .join(" ");
+
+    const yCl = getY(chartData.cl);
+    const yLcl = getY(chartData.lcl);
+    const yUcl = getY(chartData.ucl);
+
+    return (
+      <>
+        <div className="mt-3 overflow-x-auto">
+          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="min-w-[620px]">
+            {[0, 25, 50, 75, 100].map((tick) => {
+              const y = getY(tick);
+              return (
+                <g key={`tick-${tick}`}>
+                  <line
+                    x1={margin.left}
+                    y1={y}
+                    x2={chartWidth - margin.right}
+                    y2={y}
+                    stroke="currentColor"
+                    className="text-slate-200"
+                    strokeDasharray="3 4"
+                  />
+                  <text x={6} y={y + 4} fontSize="10" className="fill-slate-500">
+                    {tick}%
+                  </text>
+                </g>
+              );
+            })}
+
+            <line
+              x1={margin.left}
+              y1={yUcl}
+              x2={chartWidth - margin.right}
+              y2={yUcl}
+              stroke="currentColor"
+              className="text-rose-500"
+              strokeDasharray="6 4"
+              strokeWidth="1.5"
+            />
+            <line
+              x1={margin.left}
+              y1={yCl}
+              x2={chartWidth - margin.right}
+              y2={yCl}
+              stroke="currentColor"
+              className="text-blue-600"
+              strokeWidth="1.5"
+            />
+            <line
+              x1={margin.left}
+              y1={yLcl}
+              x2={chartWidth - margin.right}
+              y2={yLcl}
+              stroke="currentColor"
+              className="text-amber-500"
+              strokeDasharray="6 4"
+              strokeWidth="1.5"
+            />
+
+            <polyline
+              points={linePath}
+              fill="none"
+              stroke="currentColor"
+              className="text-slate-700"
+              strokeWidth="2"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+
+            {chartData.points.map((point, index) => {
+              const x = getX(index);
+              const y = getY(point.cumplimientoPct);
+              const outOfControl = point.cumplimientoPct < chartData.lcl || point.cumplimientoPct > chartData.ucl;
+              const showLabel = index % labelStep === 0 || index === chartData.points.length - 1;
+
+              return (
+                <g key={`${point.label}-${index}`}>
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r="4"
+                    fill="currentColor"
+                    className={outOfControl ? "text-rose-600" : "text-slate-700"}
+                  />
+                  {showLabel ? (
+                    <text x={x} y={chartHeight - 16} textAnchor="middle" fontSize="10" className="fill-slate-500">
+                      {point.label}
+                    </text>
+                  ) : null}
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+
+        <div className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-2">
+          <p>
+            Límite superior (UCL): <span className="font-semibold text-rose-600">{chartData.ucl}%</span>
+          </p>
+          <p>
+            Valor central (CL): <span className="font-semibold text-blue-600">{chartData.cl}%</span>
+          </p>
+          <p>
+            Límite inferior (LCL): <span className="font-semibold text-amber-600">{chartData.lcl}%</span>
+          </p>
+          <p className="text-slate-500">Puntos fuera de control se muestran en rojo.</p>
+        </div>
+      </>
+    );
+  };
+
   return (
     <main className="mx-auto max-w-6xl space-y-4 p-4 md:p-6">
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
@@ -644,7 +810,7 @@ export default function ResultadosInspecciones() {
         <>
           <section className="grid gap-3 md:grid-cols-3">
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Inspecciones</p>
+              <p className="text-sm text-slate-500">Preoperativas</p>
               <p className="text-2xl font-semibold text-slate-800">{resumen.totalInspecciones}</p>
             </article>
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -663,8 +829,35 @@ export default function ResultadosInspecciones() {
               <p className="text-2xl font-semibold text-slate-800">{resumen.totalEquipos}</p>
             </article>
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Tasa de incidencia</p>
-              <p className="text-2xl font-semibold text-slate-800">{resumen.tasaIncidencia}%</p>
+              <p className="text-sm text-slate-500">Cumplimiento por área (más deficiencias)</p>
+              <div className="mt-2 space-y-1.5">
+                {cumplimientoPorArea.map((item) => {
+                  const estadoColor =
+                    item.porcentaje < 80
+                      ? "bg-rose-500"
+                      : item.porcentaje < 90
+                        ? "bg-amber-500"
+                        : "bg-emerald-500";
+                  const estadoTexto =
+                    item.porcentaje < 80 ? "Crítico" : item.porcentaje < 90 ? "Atención" : "Óptimo";
+
+                  return (
+                    <div key={item.areaNombre} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2.5 w-2.5 rounded-full ${estadoColor}`} />
+                        <span className="text-slate-700">{item.areaNombre}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500">{estadoTexto}</span>
+                        <span className="font-semibold text-slate-800">{item.porcentaje}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {cumplimientoPorArea.length === 0 ? (
+                  <p className="text-sm text-slate-500">Sin datos por área.</p>
+                ) : null}
+              </div>
             </article>
           </section>
 
@@ -861,37 +1054,7 @@ export default function ResultadosInspecciones() {
               <p className="mt-1 text-sm text-slate-500">
                 Área: {controlArea || "Sin área seleccionada"} · Últimos 12 periodos semanales
               </p>
-              <div className="mt-3 space-y-2">
-                {controlChartData.semanal.points.map((item) => {
-                  const width = Math.max(4, Math.round(item.cumplimientoPct));
-                  const outOfControl =
-                    item.cumplimientoPct < controlChartData.semanal.lcl ||
-                    item.cumplimientoPct > controlChartData.semanal.ucl;
-                  return (
-                    <div key={item.label}>
-                      <div className="mb-1 flex items-center justify-between text-sm text-slate-600">
-                        <span>{item.label}</span>
-                        <span>{item.cumplimientoPct}%</span>
-                      </div>
-                      <div className="h-2 rounded-full bg-slate-100">
-                        <div
-                          className={`h-2 rounded-full ${outOfControl ? "bg-rose-500" : "bg-blue-400"}`}
-                          style={{ width: `${width}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-                {controlChartData.semanal.points.length === 0 ? (
-                  <p className="text-sm text-slate-500">Sin datos semanales para el gráfico de control.</p>
-                ) : (
-                  <p className="text-sm text-slate-600">
-                    CL: <span className="font-semibold">{controlChartData.semanal.cl}%</span> · LCL: {" "}
-                    <span className="font-semibold">{controlChartData.semanal.lcl}%</span> · UCL: {" "}
-                    <span className="font-semibold">{controlChartData.semanal.ucl}%</span>
-                  </p>
-                )}
-              </div>
+              {renderControlChart(controlChartData.semanal, "semanales")}
             </article>
 
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
@@ -899,37 +1062,7 @@ export default function ResultadosInspecciones() {
               <p className="mt-1 text-sm text-slate-500">
                 Área: {controlArea || "Sin área seleccionada"} · Últimos 12 periodos mensuales
               </p>
-              <div className="mt-3 space-y-2">
-                {controlChartData.mensual.points.map((item) => {
-                  const width = Math.max(4, Math.round(item.cumplimientoPct));
-                  const outOfControl =
-                    item.cumplimientoPct < controlChartData.mensual.lcl ||
-                    item.cumplimientoPct > controlChartData.mensual.ucl;
-                  return (
-                    <div key={item.label}>
-                      <div className="mb-1 flex items-center justify-between text-sm text-slate-600">
-                        <span>{item.label}</span>
-                        <span>{item.cumplimientoPct}%</span>
-                      </div>
-                      <div className="h-2 rounded-full bg-slate-100">
-                        <div
-                          className={`h-2 rounded-full ${outOfControl ? "bg-rose-500" : "bg-blue-400"}`}
-                          style={{ width: `${width}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-                {controlChartData.mensual.points.length === 0 ? (
-                  <p className="text-sm text-slate-500">Sin datos mensuales para el gráfico de control.</p>
-                ) : (
-                  <p className="text-sm text-slate-600">
-                    CL: <span className="font-semibold">{controlChartData.mensual.cl}%</span> · LCL: {" "}
-                    <span className="font-semibold">{controlChartData.mensual.lcl}%</span> · UCL: {" "}
-                    <span className="font-semibold">{controlChartData.mensual.ucl}%</span>
-                  </p>
-                )}
-              </div>
+              {renderControlChart(controlChartData.mensual, "mensuales")}
             </article>
 
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
