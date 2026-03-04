@@ -50,6 +50,18 @@ type Inspeccion = {
   created_at: string;
 };
 
+type ControlPoint = {
+  label: string;
+  cumplimientoPct: number;
+};
+
+type ControlChartData = {
+  points: ControlPoint[];
+  cl: number;
+  lcl: number;
+  ucl: number;
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
 const API_ENDPOINT = `${API_BASE_URL.replace(/\/$/, "")}/api/inspecciones-preoperativas`;
 
@@ -61,7 +73,7 @@ export default function ResultadosInspecciones() {
   const [to, setTo] = useState("");
   const [equipoQuery, setEquipoQuery] = useState("");
   const [soloNoConformes, setSoloNoConformes] = useState(false);
-  const [timeGranularity, setTimeGranularity] = useState<"semanal" | "mensual">("mensual");
+  const [controlArea, setControlArea] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
   const [data, setData] = useState<Inspeccion[]>([]);
@@ -73,6 +85,17 @@ export default function ResultadosInspecciones() {
   const areasDisponibles = useMemo(() => {
     return Array.from(new Set(data.map((item) => item.area))).sort((a, b) => a.localeCompare(b));
   }, [data]);
+
+  useEffect(() => {
+    if (areasDisponibles.length === 0) {
+      setControlArea("");
+      return;
+    }
+
+    if (!controlArea || !areasDisponibles.includes(controlArea)) {
+      setControlArea(areasDisponibles[0]);
+    }
+  }, [areasDisponibles, controlArea]);
 
   const dataFiltrada = useMemo(() => {
     const query = equipoQuery.trim().toLowerCase();
@@ -201,28 +224,6 @@ export default function ResultadosInspecciones() {
       .slice(0, 8);
   }, [dataFiltrada]);
 
-  const comparativoMensual = useMemo(() => {
-    const year = Number(selectedYear);
-    if (Number.isNaN(year)) return [] as Array<{ month: string; total: number }>;
-
-    const totals = new Array<number>(12).fill(0);
-
-    dataFiltrada.forEach((row) => {
-      const rowDate = new Date(`${row.fecha}T00:00:00`);
-      if (rowDate.getFullYear() !== year) return;
-
-      const monthIndex = rowDate.getMonth();
-      const noConformes = row.evaluacion_equipos.reduce(
-        (eqAcc, equipo) =>
-          eqAcc + equipo.aspectos.filter((aspecto) => aspecto.estado === "no_conforme").length,
-        0
-      );
-      totals[monthIndex] += noConformes;
-    });
-
-    return MONTH_OPTIONS.map((month, index) => ({ month: month.label, total: totals[index] }));
-  }, [dataFiltrada, selectedYear]);
-
   const donutData = useMemo(() => {
     const total = incidenciasPorArea.reduce((acc, item) => acc + item.total, 0);
     if (total === 0) {
@@ -278,73 +279,118 @@ export default function ResultadosInspecciones() {
     };
   }, [resumen.totalConformes, resumen.totalNoConformes]);
 
-  const xBarData = useMemo(() => {
-    const groups = new Map<string, { label: string; totalNoConformes: number; inspecciones: number; startDate: Date }>();
+  const controlChartData = useMemo(() => {
+    const formatNumber = (value: number) => Number(value.toFixed(2));
 
-    dataFiltrada.forEach((row) => {
-      const rowDate = new Date(`${row.fecha}T00:00:00`);
-      const noConformes = row.evaluacion_equipos.reduce(
-        (eqAcc, equipo) =>
-          eqAcc + equipo.aspectos.filter((aspecto) => aspecto.estado === "no_conforme").length,
-        0
+    const buildChartData = (granularity: "semanal" | "mensual"): ControlChartData => {
+      if (!controlArea) {
+        return { points: [], cl: 0, lcl: 0, ucl: 0 };
+      }
+
+      const groups = new Map<
+        string,
+        {
+          label: string;
+          startDate: Date;
+          totalAspectos: number;
+          totalConformes: number;
+        }
+      >();
+
+      data.forEach((row) => {
+        if (row.area !== controlArea) return;
+
+        const rowDate = new Date(`${row.fecha}T00:00:00`);
+        let key = "";
+        let label = "";
+        let startDate = new Date(rowDate);
+
+        if (granularity === "mensual") {
+          const month = String(rowDate.getMonth() + 1).padStart(2, "0");
+          key = `${rowDate.getFullYear()}-${month}`;
+          label = `${MONTH_OPTIONS[rowDate.getMonth()].label} ${rowDate.getFullYear()}`;
+          startDate = new Date(rowDate.getFullYear(), rowDate.getMonth(), 1);
+        } else {
+          const day = rowDate.getDay();
+          const diffToMonday = day === 0 ? -6 : 1 - day;
+          const monday = new Date(rowDate);
+          monday.setDate(rowDate.getDate() + diffToMonday);
+
+          const weekYear = monday.getFullYear();
+          const weekMonth = String(monday.getMonth() + 1).padStart(2, "0");
+          const weekDay = String(monday.getDate()).padStart(2, "0");
+
+          key = `${weekYear}-${weekMonth}-${weekDay}`;
+          label = `Sem ${weekDay}/${weekMonth}`;
+          startDate = monday;
+        }
+
+        const totalAspectosInspeccion = row.evaluacion_equipos.reduce(
+          (equiposAcc, equipo) => equiposAcc + equipo.aspectos.length,
+          0
+        );
+        const totalConformesInspeccion = row.evaluacion_equipos.reduce(
+          (equiposAcc, equipo) =>
+            equiposAcc + equipo.aspectos.filter((aspecto) => aspecto.estado === "conforme").length,
+          0
+        );
+
+        const existing = groups.get(key);
+        if (existing) {
+          existing.totalAspectos += totalAspectosInspeccion;
+          existing.totalConformes += totalConformesInspeccion;
+        } else {
+          groups.set(key, {
+            label,
+            startDate,
+            totalAspectos: totalAspectosInspeccion,
+            totalConformes: totalConformesInspeccion,
+          });
+        }
+      });
+
+      const ordered = Array.from(groups.values())
+        .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+        .map((group) => {
+          const cumplimientoPct =
+            group.totalAspectos > 0 ? formatNumber((group.totalConformes / group.totalAspectos) * 100) : 0;
+
+          return {
+            label: group.label,
+            cumplimientoPct,
+          };
+        });
+
+      const points = ordered.slice(-12);
+      if (points.length === 0) {
+        return { points: [], cl: 0, lcl: 0, ucl: 0 };
+      }
+
+      const cl = formatNumber(
+        points.reduce((acc, point) => acc + point.cumplimientoPct, 0) / points.length
       );
 
-      let key = "";
-      let label = "";
-      let startDate = new Date(rowDate);
+      const variance =
+        points.reduce((acc, point) => acc + (point.cumplimientoPct - cl) ** 2, 0) /
+        points.length;
+      const sigma = Math.sqrt(variance);
 
-      if (timeGranularity === "mensual") {
-        const month = String(rowDate.getMonth() + 1).padStart(2, "0");
-        key = `${rowDate.getFullYear()}-${month}`;
-        label = `${MONTH_OPTIONS[rowDate.getMonth()].label} ${rowDate.getFullYear()}`;
-        startDate = new Date(rowDate.getFullYear(), rowDate.getMonth(), 1);
-      } else {
-        const day = rowDate.getDay();
-        const diffToMonday = day === 0 ? -6 : 1 - day;
-        const monday = new Date(rowDate);
-        monday.setDate(rowDate.getDate() + diffToMonday);
+      const lcl = formatNumber(Math.max(0, cl - 3 * sigma));
+      const ucl = formatNumber(Math.min(100, cl + 3 * sigma));
 
-        const weekYear = monday.getFullYear();
-        const weekMonth = String(monday.getMonth() + 1).padStart(2, "0");
-        const weekDay = String(monday.getDate()).padStart(2, "0");
-
-        key = `${weekYear}-${weekMonth}-${weekDay}`;
-        label = `Sem ${weekDay}/${weekMonth}`;
-        startDate = monday;
-      }
-
-      const existing = groups.get(key);
-      if (existing) {
-        existing.totalNoConformes += noConformes;
-        existing.inspecciones += 1;
-      } else {
-        groups.set(key, {
-          label,
-          totalNoConformes: noConformes,
-          inspecciones: 1,
-          startDate,
-        });
-      }
-    });
-
-    const ordered = Array.from(groups.values())
-      .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
-      .map((group) => ({
-        label: group.label,
-        promedio: Number((group.totalNoConformes / group.inspecciones).toFixed(2)),
-      }));
-
-    const last12 = ordered.slice(-12);
-    const globalMean =
-      last12.length > 0
-        ? Number((last12.reduce((acc, item) => acc + item.promedio, 0) / last12.length).toFixed(2))
-        : 0;
+      return {
+        points,
+        cl,
+        lcl,
+        ucl,
+      };
+    };
 
     return {
-      points: last12,
-      globalMean,
+      semanal: buildChartData("semanal"),
+      mensual: buildChartData("mensual"),
     };
-  }, [dataFiltrada, timeGranularity]);
+  }, [data, controlArea]);
 
   const aplicarMes = async (monthValue: string) => {
     setSelectedMonth(monthValue);
@@ -798,45 +844,89 @@ export default function ResultadosInspecciones() {
 
           <section className="grid gap-3 lg:grid-cols-2">
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-base font-semibold text-slate-800">
-                  Gráfico X-bar (promedios en tiempo t)
-                </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base font-semibold text-slate-800">Control semanal de % cumplimiento</h2>
                 <select
-                  value={timeGranularity}
-                  onChange={(event) =>
-                    setTimeGranularity(event.target.value as "semanal" | "mensual")
-                  }
+                  value={controlArea}
+                  onChange={(event) => setControlArea(event.target.value)}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
                 >
-                  <option value="mensual">Mensual</option>
-                  <option value="semanal">Semanal</option>
+                  {areasDisponibles.map((areaItem) => (
+                    <option key={areaItem} value={areaItem}>
+                      {areaItem}
+                    </option>
+                  ))}
                 </select>
               </div>
               <p className="mt-1 text-sm text-slate-500">
-                Promedio de no conformidades por inspección ({timeGranularity})
+                Área: {controlArea || "Sin área seleccionada"} · Últimos 12 periodos semanales
               </p>
               <div className="mt-3 space-y-2">
-                {xBarData.points.map((item) => {
-                  const max = Math.max(...xBarData.points.map((point) => point.promedio), 1);
-                  const width = Math.max(4, Math.round((item.promedio / max) * 100));
+                {controlChartData.semanal.points.map((item) => {
+                  const width = Math.max(4, Math.round(item.cumplimientoPct));
+                  const outOfControl =
+                    item.cumplimientoPct < controlChartData.semanal.lcl ||
+                    item.cumplimientoPct > controlChartData.semanal.ucl;
                   return (
                     <div key={item.label}>
                       <div className="mb-1 flex items-center justify-between text-sm text-slate-600">
                         <span>{item.label}</span>
-                        <span>{item.promedio}</span>
+                        <span>{item.cumplimientoPct}%</span>
                       </div>
                       <div className="h-2 rounded-full bg-slate-100">
-                        <div className="h-2 rounded-full bg-blue-400" style={{ width: `${width}%` }} />
+                        <div
+                          className={`h-2 rounded-full ${outOfControl ? "bg-rose-500" : "bg-blue-400"}`}
+                          style={{ width: `${width}%` }}
+                        />
                       </div>
                     </div>
                   );
                 })}
-                {xBarData.points.length === 0 ? (
-                  <p className="text-sm text-slate-500">Sin datos para el gráfico X-bar.</p>
+                {controlChartData.semanal.points.length === 0 ? (
+                  <p className="text-sm text-slate-500">Sin datos semanales para el gráfico de control.</p>
                 ) : (
                   <p className="text-sm text-slate-600">
-                    Media global (línea X): <span className="font-semibold">{xBarData.globalMean}</span>
+                    CL: <span className="font-semibold">{controlChartData.semanal.cl}%</span> · LCL: {" "}
+                    <span className="font-semibold">{controlChartData.semanal.lcl}%</span> · UCL: {" "}
+                    <span className="font-semibold">{controlChartData.semanal.ucl}%</span>
+                  </p>
+                )}
+              </div>
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+              <h2 className="text-base font-semibold text-slate-800">Control mensual de % cumplimiento</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Área: {controlArea || "Sin área seleccionada"} · Últimos 12 periodos mensuales
+              </p>
+              <div className="mt-3 space-y-2">
+                {controlChartData.mensual.points.map((item) => {
+                  const width = Math.max(4, Math.round(item.cumplimientoPct));
+                  const outOfControl =
+                    item.cumplimientoPct < controlChartData.mensual.lcl ||
+                    item.cumplimientoPct > controlChartData.mensual.ucl;
+                  return (
+                    <div key={item.label}>
+                      <div className="mb-1 flex items-center justify-between text-sm text-slate-600">
+                        <span>{item.label}</span>
+                        <span>{item.cumplimientoPct}%</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-100">
+                        <div
+                          className={`h-2 rounded-full ${outOfControl ? "bg-rose-500" : "bg-blue-400"}`}
+                          style={{ width: `${width}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+                {controlChartData.mensual.points.length === 0 ? (
+                  <p className="text-sm text-slate-500">Sin datos mensuales para el gráfico de control.</p>
+                ) : (
+                  <p className="text-sm text-slate-600">
+                    CL: <span className="font-semibold">{controlChartData.mensual.cl}%</span> · LCL: {" "}
+                    <span className="font-semibold">{controlChartData.mensual.lcl}%</span> · UCL: {" "}
+                    <span className="font-semibold">{controlChartData.mensual.ucl}%</span>
                   </p>
                 )}
               </div>
