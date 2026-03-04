@@ -180,6 +180,10 @@ export default function FormInspeccionPreoperativa() {
 
       <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
         <h2 className="text-lg font-medium text-slate-800">Paso 1: Selecciona el área</h2>
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Responde esta preoperativa con sinceridad. La calidad de estos datos impacta directamente
+          las decisiones del equipo y las acciones de mejora.
+        </p>
         <select
           className="w-full rounded-xl border border-slate-300 p-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
           value={area}
