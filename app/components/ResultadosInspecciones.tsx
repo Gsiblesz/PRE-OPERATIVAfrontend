@@ -90,6 +90,53 @@ type ControlChartData = {
   ucl: number;
 };
 
+type SemanaMesItem = {
+  key: string;
+  label: string;
+  from: string;
+  to: string;
+  startDate: Date;
+};
+
+const formatDateToYmd = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const buildMonthWeeks = (year: number, month: number): SemanaMesItem[] => {
+  const lastDay = new Date(year, month, 0).getDate();
+  const monthPadded = String(month).padStart(2, "0");
+  const items: SemanaMesItem[] = [];
+
+  let day = 1;
+  let weekIndex = 1;
+
+  while (day <= lastDay) {
+    const weekStartDay = day;
+    const weekEndDay = Math.min(day + 6, lastDay);
+
+    const startDate = new Date(year, month - 1, weekStartDay);
+    const endDate = new Date(year, month - 1, weekEndDay);
+
+    items.push({
+      key: `${year}-${monthPadded}-S${String(weekIndex).padStart(2, "0")}`,
+      label: `Semana ${String(weekIndex).padStart(2, "0")}: ${String(weekStartDay).padStart(2, "0")}/${monthPadded} - ${String(
+        weekEndDay
+      ).padStart(2, "0")}/${monthPadded}`,
+      from: formatDateToYmd(startDate),
+      to: formatDateToYmd(endDate),
+      startDate,
+    });
+
+    day += 7;
+    weekIndex += 1;
+  }
+
+  return items;
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
 const API_ENDPOINT = `${API_BASE_URL.replace(/\/$/, "")}/api/inspecciones-preoperativas`;
 
@@ -104,6 +151,7 @@ export default function ResultadosInspecciones() {
   const [controlArea, setControlArea] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
   const [selectedYear, setSelectedYear] = useState(YEAR_OPTIONS[0]);
+  const [selectedWeekKey, setSelectedWeekKey] = useState("");
   const [data, setData] = useState<Inspeccion[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -218,12 +266,16 @@ export default function ResultadosInspecciones() {
     return Object.entries(grouped)
       .map(([areaNombre, values]) => ({
         areaNombre,
-        porcentaje:
+        cumplimiento:
           values.totalAspectos > 0
             ? Math.round((values.conformes / values.totalAspectos) * 100)
             : 0,
+        noConformidad:
+          values.totalAspectos > 0
+            ? Math.round(((values.totalAspectos - values.conformes) / values.totalAspectos) * 100)
+            : 0,
       }))
-      .sort((a, b) => b.porcentaje - a.porcentaje)
+      .sort((a, b) => b.cumplimiento - a.cumplimiento)
       .slice(0, 3);
   }, [dataFiltrada]);
 
@@ -472,6 +524,7 @@ export default function ResultadosInspecciones() {
         selectedMonth !== "" &&
         !Number.isNaN(targetYear) &&
         !Number.isNaN(targetMonth);
+      const monthWeeks = hasSelectedMonth ? buildMonthWeeks(targetYear, targetMonth) : [];
 
       const groups = new Map<
         string,
@@ -484,42 +537,14 @@ export default function ResultadosInspecciones() {
       >();
 
       if (hasSelectedMonth) {
-        const monthStart = new Date(targetYear, targetMonth - 1, 1);
-        const monthEnd = new Date(targetYear, targetMonth, 0);
-        const cursor = new Date(monthStart);
-        const day = cursor.getDay();
-        const diffToMonday = day === 0 ? -6 : 1 - day;
-        cursor.setDate(cursor.getDate() + diffToMonday);
-
-        let weekIndex = 1;
-        while (cursor <= monthEnd) {
-          const weekStart = new Date(cursor);
-          const weekYear = weekStart.getFullYear();
-          const weekMonth = String(weekStart.getMonth() + 1).padStart(2, "0");
-          const weekDay = String(weekStart.getDate()).padStart(2, "0");
-          const key = `${weekYear}-${weekMonth}-${weekDay}`;
-
-          const weekEnd = new Date(weekStart);
-          weekEnd.setDate(weekEnd.getDate() + 6);
-
-          const displayStart = weekStart < monthStart ? monthStart : weekStart;
-          const displayEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
-          const label = `Sem ${String(weekIndex).padStart(2, "0")} (${String(
-            displayStart.getDate()
-          ).padStart(2, "0")}/${String(displayStart.getMonth() + 1).padStart(2, "0")}-${String(
-            displayEnd.getDate()
-          ).padStart(2, "0")}/${String(displayEnd.getMonth() + 1).padStart(2, "0")})`;
-
-          groups.set(key, {
-            label,
-            startDate: weekStart,
+        monthWeeks.forEach((week) => {
+          groups.set(week.key, {
+            label: week.label,
+            startDate: week.startDate,
             totalAspectos: 0,
             totalConformes: 0,
           });
-
-          cursor.setDate(cursor.getDate() + 7);
-          weekIndex += 1;
-        }
+        });
       }
 
       data.forEach((row) => {
@@ -543,18 +568,27 @@ export default function ResultadosInspecciones() {
           label = `${MONTH_OPTIONS[rowDate.getMonth()].label} ${rowDate.getFullYear()}`;
           startDate = new Date(rowDate.getFullYear(), rowDate.getMonth(), 1);
         } else {
-          const day = rowDate.getDay();
-          const diffToMonday = day === 0 ? -6 : 1 - day;
-          const monday = new Date(rowDate);
-          monday.setDate(rowDate.getDate() + diffToMonday);
+          if (hasSelectedMonth) {
+            const weekMatched = monthWeeks.find((week) => row.fecha >= week.from && row.fecha <= week.to);
+            if (!weekMatched) return;
 
-          const weekYear = monday.getFullYear();
-          const weekMonth = String(monday.getMonth() + 1).padStart(2, "0");
-          const weekDay = String(monday.getDate()).padStart(2, "0");
+            key = weekMatched.key;
+            label = weekMatched.label;
+            startDate = weekMatched.startDate;
+          } else {
+            const day = rowDate.getDay();
+            const diffToMonday = day === 0 ? -6 : 1 - day;
+            const monday = new Date(rowDate);
+            monday.setDate(rowDate.getDate() + diffToMonday);
 
-          key = `${weekYear}-${weekMonth}-${weekDay}`;
-          label = `Sem ${weekDay}/${weekMonth}`;
-          startDate = monday;
+            const weekYear = monday.getFullYear();
+            const weekMonth = String(monday.getMonth() + 1).padStart(2, "0");
+            const weekDay = String(monday.getDate()).padStart(2, "0");
+
+            key = `${weekYear}-${weekMonth}-${weekDay}`;
+            label = `Sem ${weekDay}/${weekMonth}`;
+            startDate = monday;
+          }
         }
 
         const totalAspectosInspeccion = row.evaluacion_equipos.reduce(
@@ -625,48 +659,53 @@ export default function ResultadosInspecciones() {
   }, [data, controlArea, selectedMonth, selectedYear]);
 
   const semanasDelMesSeleccionado = useMemo(() => {
-    if (!selectedMonth) return [] as Array<{ label: string }>;
+    if (!selectedMonth) return [] as SemanaMesItem[];
 
     const year = Number(selectedYear);
     const month = Number(selectedMonth);
-    if (Number.isNaN(year) || Number.isNaN(month)) return [] as Array<{ label: string }>;
+    if (Number.isNaN(year) || Number.isNaN(month)) return [] as SemanaMesItem[];
 
-    const monthStart = new Date(year, month - 1, 1);
-    const monthEnd = new Date(year, month, 0);
+    return buildMonthWeeks(year, month);
+  }, [selectedMonth, selectedYear]);
 
-    const cursor = new Date(monthStart);
-    const day = cursor.getDay();
-    const diffToMonday = day === 0 ? -6 : 1 - day;
-    cursor.setDate(cursor.getDate() + diffToMonday);
+  const aplicarRango = async (nextFrom: string, nextTo: string, failMessage: string) => {
+    setFrom(nextFrom);
+    setTo(nextTo);
 
-    const weekItems: Array<{ label: string }> = [];
-    let weekIndex = 1;
+    if (!password) return;
 
-    while (cursor <= monthEnd) {
-      const weekStart = new Date(cursor);
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekEnd.getDate() + 6);
+    setLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams();
+      if (area) params.set("area", area);
+      params.set("from", nextFrom);
+      params.set("to", nextTo);
 
-      const displayStart = weekStart < monthStart ? monthStart : weekStart;
-      const displayEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
-
-      weekItems.push({
-        label: `Semana ${String(weekIndex).padStart(2, "0")}: ${String(displayStart.getDate()).padStart(2, "0")}/${String(
-          displayStart.getMonth() + 1
-        ).padStart(2, "0")} - ${String(displayEnd.getDate()).padStart(2, "0")}/${String(
-          displayEnd.getMonth() + 1
-        ).padStart(2, "0")}`,
+      const response = await fetch(`${API_ENDPOINT}?${params.toString()}`, {
+        method: "GET",
+        headers: {
+          "x-results-password": password,
+        },
       });
 
-      cursor.setDate(cursor.getDate() + 7);
-      weekIndex += 1;
-    }
+      if (!response.ok) {
+        throw new Error(failMessage);
+      }
 
-    return weekItems;
-  }, [selectedMonth, selectedYear]);
+      const payload = await response.json();
+      setData(payload.data ?? []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Error inesperado.";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const aplicarMes = async (monthValue: string) => {
     setSelectedMonth(monthValue);
+    setSelectedWeekKey("");
 
     if (!monthValue) {
       setFrom("");
@@ -687,38 +726,12 @@ export default function ResultadosInspecciones() {
     const nextFrom = startDate.toISOString().slice(0, 10);
     const nextTo = endDate.toISOString().slice(0, 10);
 
-    setFrom(nextFrom);
-    setTo(nextTo);
+    await aplicarRango(nextFrom, nextTo, "No se pudo filtrar por mes.");
+  };
 
-    if (password) {
-      setLoading(true);
-      setError("");
-      try {
-        const params = new URLSearchParams();
-        if (area) params.set("area", area);
-        params.set("from", nextFrom);
-        params.set("to", nextTo);
-
-        const response = await fetch(`${API_ENDPOINT}?${params.toString()}`, {
-          method: "GET",
-          headers: {
-            "x-results-password": password,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error("No se pudo filtrar por mes.");
-        }
-
-        const payload = await response.json();
-        setData(payload.data ?? []);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Error inesperado.";
-        setError(message);
-      } finally {
-        setLoading(false);
-      }
-    }
+  const aplicarSemana = async (week: SemanaMesItem) => {
+    setSelectedWeekKey(week.key);
+    await aplicarRango(week.from, week.to, "No se pudo filtrar por semana.");
   };
 
   const cargarResultados = async (passwordValue: string, keepFilters = true) => {
@@ -777,6 +790,7 @@ export default function ResultadosInspecciones() {
   const onFiltrar = async (event: FormEvent) => {
     event.preventDefault();
     setSelectedMonth("");
+    setSelectedWeekKey("");
     if (!password) return;
     await cargarResultados(password, true);
   };
@@ -788,6 +802,7 @@ export default function ResultadosInspecciones() {
     setEquipoQuery("");
     setSoloNoConformes(false);
     setSelectedMonth("");
+    setSelectedWeekKey("");
     setSelectedIds([]);
     if (!password) return;
 
@@ -1061,7 +1076,7 @@ export default function ResultadosInspecciones() {
               <p className="text-2xl font-semibold text-amber-700">{resumen.inspeccionesConIncidencias}</p>
             </article>
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">No conformes</p>
+              <p className="text-sm text-slate-500">No conformidad</p>
               <p className="text-2xl font-semibold text-rose-700">{resumen.totalNoConformes}</p>
             </article>
           </section>
@@ -1072,17 +1087,17 @@ export default function ResultadosInspecciones() {
               <p className="text-2xl font-semibold text-slate-800">{resumen.totalEquipos}</p>
             </article>
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">Cumplimiento por área (mayor eficiencia)</p>
+              <p className="text-sm text-slate-500">Balance por área (positivo y negativo)</p>
               <div className="mt-2 space-y-1.5">
                 {cumplimientoPorArea.map((item) => {
                   const estadoColor =
-                    item.porcentaje < 80
+                    item.cumplimiento < 80
                       ? "bg-rose-500"
-                      : item.porcentaje < 90
+                      : item.cumplimiento < 90
                         ? "bg-amber-500"
                         : "bg-emerald-500";
                   const estadoTexto =
-                    item.porcentaje < 80 ? "Crítico" : item.porcentaje < 90 ? "Atención" : "Óptimo";
+                    item.cumplimiento < 80 ? "Crítico" : item.cumplimiento < 90 ? "Atención" : "Óptimo";
 
                   return (
                     <div key={item.areaNombre} className="flex items-center justify-between text-sm">
@@ -1092,7 +1107,8 @@ export default function ResultadosInspecciones() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-slate-500">{estadoTexto}</span>
-                        <span className="font-semibold text-slate-800">{item.porcentaje}%</span>
+                        <span className="font-semibold text-emerald-700">+{item.cumplimiento}%</span>
+                        <span className="font-semibold text-rose-700">-{item.noConformidad}%</span>
                       </div>
                     </div>
                   );
@@ -1206,14 +1222,33 @@ export default function ResultadosInspecciones() {
               {selectedMonth ? (
                 <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3">
                   <p className="mb-2 text-sm font-medium text-blue-800">Semanas asociadas al mes seleccionado</p>
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => aplicarMes(selectedMonth)}
+                      className={`rounded-full border px-2.5 py-1 text-xs ${
+                        selectedWeekKey === ""
+                          ? "border-blue-500 bg-blue-100 text-blue-800"
+                          : "border-blue-200 bg-white text-blue-700"
+                      }`}
+                    >
+                      Mes completo
+                    </button>
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {semanasDelMesSeleccionado.map((week) => (
-                      <span
-                        key={week.label}
-                        className="rounded-full border border-blue-200 bg-white px-2.5 py-1 text-xs text-blue-700"
+                      <button
+                        key={week.key}
+                        type="button"
+                        onClick={() => aplicarSemana(week)}
+                        className={`rounded-full border px-2.5 py-1 text-xs ${
+                          selectedWeekKey === week.key
+                            ? "border-blue-500 bg-blue-100 text-blue-800"
+                            : "border-blue-200 bg-white text-blue-700"
+                        }`}
                       >
                         {week.label}
-                      </span>
+                      </button>
                     ))}
                   </div>
                 </div>
