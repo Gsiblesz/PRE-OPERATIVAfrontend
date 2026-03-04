@@ -1094,6 +1094,12 @@ export default function ResultadosInspecciones() {
                         : "bg-emerald-500";
                   const estadoTexto =
                     item.cumplimiento < 80 ? "Crítico" : item.cumplimiento < 90 ? "Atención" : "Óptimo";
+                  const porcentajeColor =
+                    item.cumplimiento < 50
+                      ? "text-rose-700"
+                      : item.cumplimiento <= 75
+                        ? "text-amber-700"
+                        : "text-emerald-700";
 
                   return (
                     <div key={item.areaNombre} className="flex items-center justify-between text-sm">
@@ -1103,7 +1109,7 @@ export default function ResultadosInspecciones() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-slate-500">{estadoTexto}</span>
-                        <span className="font-semibold text-emerald-700">{item.cumplimiento}%</span>
+                        <span className={`font-semibold ${porcentajeColor}`}>{item.cumplimiento}%</span>
                       </div>
                     </div>
                   );
