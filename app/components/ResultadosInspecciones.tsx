@@ -90,6 +90,8 @@ type ControlChartData = {
   ucl: number;
 };
 
+type ChartZoomMode = "auto" | "30-100" | "50-100";
+
 type SemanaMesItem = {
   key: string;
   label: string;
@@ -152,26 +154,12 @@ export default function ResultadosInspecciones() {
   const [selectedMonth, setSelectedMonth] = useState("");
   const [selectedYear, setSelectedYear] = useState(YEAR_OPTIONS[0]);
   const [selectedWeekKey, setSelectedWeekKey] = useState("");
+  const [chartZoomMode, setChartZoomMode] = useState<ChartZoomMode>("auto");
   const [data, setData] = useState<Inspeccion[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [error, setError] = useState("");
-
-  const areasDisponibles = useMemo(() => {
-    return Array.from(new Set(data.map((item) => item.area))).sort((a, b) => a.localeCompare(b));
-  }, [data]);
-
-  useEffect(() => {
-    if (areasDisponibles.length === 0) {
-      setControlArea("");
-      return;
-    }
-
-    if (!controlArea || !areasDisponibles.includes(controlArea)) {
-      setControlArea(areasDisponibles[0]);
-    }
-  }, [areasDisponibles, controlArea]);
 
   const dataFiltrada = useMemo(() => {
     const query = equipoQuery.trim().toLowerCase();
@@ -199,6 +187,21 @@ export default function ResultadosInspecciones() {
       })
       .filter((inspeccion) => inspeccion.evaluacion_equipos.length > 0);
   }, [data, equipoQuery, soloNoConformes]);
+
+  const areasDisponibles = useMemo(() => {
+    return Array.from(new Set(dataFiltrada.map((item) => item.area))).sort((a, b) => a.localeCompare(b));
+  }, [dataFiltrada]);
+
+  useEffect(() => {
+    if (areasDisponibles.length === 0) {
+      setControlArea("");
+      return;
+    }
+
+    if (!controlArea || !areasDisponibles.includes(controlArea)) {
+      setControlArea(areasDisponibles[0]);
+    }
+  }, [areasDisponibles, controlArea]);
 
   const resumen = useMemo(() => {
     const totalInspecciones = dataFiltrada.length;
@@ -543,7 +546,7 @@ export default function ResultadosInspecciones() {
         });
       }
 
-      data.forEach((row) => {
+      dataFiltrada.forEach((row) => {
         if (row.area !== controlArea) return;
 
         const rowDate = new Date(`${row.fecha}T00:00:00`);
@@ -652,7 +655,7 @@ export default function ResultadosInspecciones() {
       semanal: buildChartData("semanal"),
       mensual: buildChartData("mensual"),
     };
-  }, [data, controlArea, selectedMonth, selectedYear]);
+  }, [dataFiltrada, controlArea, selectedMonth, selectedYear]);
 
   const semanasDelMesSeleccionado = useMemo(() => {
     if (!selectedMonth) return [] as SemanaMesItem[];
@@ -897,6 +900,37 @@ export default function ResultadosInspecciones() {
     const plotHeight = chartHeight - margin.top - margin.bottom;
     const labelStep = Math.max(1, Math.ceil(chartData.points.length / 6));
 
+    const values = [
+      ...chartData.points.map((point) => point.cumplimientoPct),
+      chartData.cl,
+      chartData.lcl,
+      chartData.ucl,
+    ];
+
+    const rawMin = Math.min(...values);
+    const rawMax = Math.max(...values);
+    const paddedMin = Math.floor((rawMin - 5) / 5) * 5;
+    const paddedMax = Math.ceil((rawMax + 5) / 5) * 5;
+
+    const canStartAtThirty = chartData.lcl >= 30 && rawMin >= 30;
+
+    let yMin = Math.max(0, canStartAtThirty ? Math.max(30, paddedMin) : paddedMin);
+    let yMax = Math.min(100, Math.max(yMin + 5, paddedMax));
+
+    if (chartZoomMode === "30-100") {
+      yMin = 30;
+      yMax = 100;
+    } else if (chartZoomMode === "50-100") {
+      yMin = 50;
+      yMax = 100;
+    }
+
+    const yRange = Math.max(1, yMax - yMin);
+
+    const yTicks = Array.from({ length: 5 }, (_, index) =>
+      Number((yMin + (index * yRange) / 4).toFixed(2))
+    );
+
     const getX = (index: number) => {
       if (chartData.points.length === 1) {
         return margin.left + plotWidth / 2;
@@ -905,7 +939,7 @@ export default function ResultadosInspecciones() {
       return margin.left + (index * plotWidth) / (chartData.points.length - 1);
     };
 
-    const getY = (value: number) => margin.top + ((100 - value) * plotHeight) / 100;
+    const getY = (value: number) => margin.top + ((yMax - value) * plotHeight) / yRange;
 
     const linePath = chartData.points
       .map((point, index) => `${getX(index)},${getY(point.cumplimientoPct)}`)
@@ -919,7 +953,7 @@ export default function ResultadosInspecciones() {
       <>
         <div className="mt-3 overflow-x-auto">
           <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="min-w-[620px]">
-            {[0, 25, 50, 75, 100].map((tick) => {
+            {yTicks.map((tick) => {
               const y = getY(tick);
               return (
                 <g key={`tick-${tick}`}>
@@ -933,7 +967,7 @@ export default function ResultadosInspecciones() {
                     strokeDasharray="3 4"
                   />
                   <text x={6} y={y + 4} fontSize="10" className="fill-slate-500">
-                    {tick}%
+                    {Number.isInteger(tick) ? `${tick}%` : `${tick.toFixed(1)}%`}
                   </text>
                 </g>
               );
@@ -1087,19 +1121,29 @@ export default function ResultadosInspecciones() {
               <div className="mt-2 space-y-1.5">
                 {cumplimientoPorArea.map((item) => {
                   const estadoColor =
-                    item.cumplimiento < 80
+                    item.cumplimiento < 50
                       ? "bg-rose-500"
-                      : item.cumplimiento < 90
+                      : item.cumplimiento < 70
                         ? "bg-amber-500"
-                        : "bg-emerald-500";
+                        : item.cumplimiento < 85
+                          ? "bg-sky-500"
+                          : "bg-emerald-500";
                   const estadoTexto =
-                    item.cumplimiento < 80 ? "Crítico" : item.cumplimiento < 90 ? "Atención" : "Óptimo";
+                    item.cumplimiento < 50
+                      ? "Mal"
+                      : item.cumplimiento < 70
+                        ? "Atención"
+                        : item.cumplimiento < 85
+                          ? "Bien"
+                          : "Óptimo";
                   const porcentajeColor =
                     item.cumplimiento < 50
                       ? "text-rose-700"
-                      : item.cumplimiento <= 75
+                      : item.cumplimiento < 70
                         ? "text-amber-700"
-                        : "text-emerald-700";
+                        : item.cumplimiento < 85
+                          ? "text-sky-700"
+                          : "text-emerald-700";
 
                   return (
                     <div key={item.areaNombre} className="flex items-center justify-between text-sm">
@@ -1535,17 +1579,28 @@ export default function ResultadosInspecciones() {
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-base font-semibold text-slate-800">Control semanal de % cumplimiento</h2>
-                <select
-                  value={controlArea}
-                  onChange={(event) => setControlArea(event.target.value)}
-                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
-                >
-                  {areasDisponibles.map((areaItem) => (
-                    <option key={areaItem} value={areaItem}>
-                      {areaItem}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={chartZoomMode}
+                    onChange={(event) => setChartZoomMode(event.target.value as ChartZoomMode)}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                  >
+                    <option value="auto">Zoom: Auto (LCL/UCL)</option>
+                    <option value="30-100">Zoom: 30% - 100%</option>
+                    <option value="50-100">Zoom: 50% - 100%</option>
+                  </select>
+                  <select
+                    value={controlArea}
+                    onChange={(event) => setControlArea(event.target.value)}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                  >
+                    {areasDisponibles.map((areaItem) => (
+                      <option key={areaItem} value={areaItem}>
+                        {areaItem}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <p className="mt-1 text-sm text-slate-500">
                 Área: {controlArea || "Sin área seleccionada"} · Últimos 12 periodos semanales
