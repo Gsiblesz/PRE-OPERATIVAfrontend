@@ -1123,25 +1123,25 @@ export default function ResultadosInspecciones() {
                   const estadoColor =
                     item.cumplimiento < 50
                       ? "bg-rose-500"
-                      : item.cumplimiento < 70
+                      : item.cumplimiento < 75
                         ? "bg-amber-500"
-                        : item.cumplimiento < 85
+                        : item.cumplimiento < 90
                           ? "bg-sky-500"
                           : "bg-emerald-500";
                   const estadoTexto =
                     item.cumplimiento < 50
                       ? "Mal"
-                      : item.cumplimiento < 70
+                      : item.cumplimiento < 75
                         ? "Atención"
-                        : item.cumplimiento < 85
+                        : item.cumplimiento < 90
                           ? "Bien"
                           : "Óptimo";
                   const porcentajeColor =
                     item.cumplimiento < 50
                       ? "text-rose-700"
-                      : item.cumplimiento < 70
+                      : item.cumplimiento < 75
                         ? "text-amber-700"
-                        : item.cumplimiento < 85
+                        : item.cumplimiento < 90
                           ? "text-sky-700"
                           : "text-emerald-700";
 
