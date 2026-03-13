@@ -845,12 +845,6 @@ export default function ResultadosInspecciones() {
       return;
     }
 
-    const popup = window.open("", "_blank", "noopener,noreferrer,width=980,height=760");
-    if (!popup) {
-      setError("No se pudo abrir la vista de impresión. Verifica si el navegador bloquea ventanas emergentes.");
-      return;
-    }
-
     const escapeHtml = (value: string) =>
       value
         .replace(/&/g, "&amp;")
@@ -1110,15 +1104,25 @@ export default function ResultadosInspecciones() {
   </body>
 </html>`;
 
-    popup.document.open();
-    popup.document.write(html);
-    popup.document.close();
-    popup.document.title = suggestedFileName;
-    popup.focus();
+    const htmlBlob = new Blob([html], { type: "text/html" });
+    const htmlUrl = URL.createObjectURL(htmlBlob);
 
-    window.setTimeout(() => {
+    const popup = window.open(htmlUrl, "_blank", "width=980,height=760");
+    if (!popup) {
+      URL.revokeObjectURL(htmlUrl);
+      setError("No se pudo abrir la vista de impresión. Verifica si el navegador bloquea ventanas emergentes.");
+      return;
+    }
+
+    popup.onload = () => {
+      popup.document.title = suggestedFileName;
+      popup.focus();
       popup.print();
-    }, 250);
+
+      window.setTimeout(() => {
+        URL.revokeObjectURL(htmlUrl);
+      }, 10000);
+    };
   };
 
   const toggleSelect = (id: string) => {
