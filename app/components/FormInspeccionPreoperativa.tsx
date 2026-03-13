@@ -20,6 +20,11 @@ type EstadoAspectoUI = {
   estado: EstadoAspecto;
 };
 
+type HisopadoItem = {
+  tipo: string;
+  detalle: string;
+};
+
 export default function FormInspeccionPreoperativa() {
   const [area, setArea] = useState("");
   const [responsable, setResponsable] = useState("");
@@ -28,8 +33,9 @@ export default function FormInspeccionPreoperativa() {
   const [observacionEquipo, setObservacionEquipo] = useState("");
   const [evaluaciones, setEvaluaciones] = useState<EvaluacionEquipo[]>([]);
   const [incluyeHisopado, setIncluyeHisopado] = useState(false);
-  const [tipoHisopado, setTipoHisopado] = useState("");
-  const [detalleHisopado, setDetalleHisopado] = useState("");
+  const [hisopados, setHisopados] = useState<HisopadoItem[]>([
+    { tipo: "", detalle: "" },
+  ]);
 
   const equiposArea = useMemo(() => (area ? AREAS_CONFIG[area] ?? [] : []), [area]);
 
@@ -56,8 +62,7 @@ export default function FormInspeccionPreoperativa() {
     setObservacionEquipo("");
     setEvaluaciones([]);
     setIncluyeHisopado(false);
-    setTipoHisopado("");
-    setDetalleHisopado("");
+    setHisopados([{ tipo: "", detalle: "" }]);
   };
 
   const onEquipoChange = (nextEquipoId: string) => {
@@ -124,9 +129,20 @@ export default function FormInspeccionPreoperativa() {
   const finalizarArea = async () => {
     if (!area || !responsableValido || evaluaciones.length === 0) return;
 
-    if (incluyeHisopado && !tipoHisopado) {
-      alert("Selecciona si el hisopado es para trabajadores, superficies o equipos.");
+    if (incluyeHisopado && hisopados.length === 0) {
+      alert("Agrega al menos un hisopado para continuar.");
       return;
+    }
+
+    if (incluyeHisopado) {
+      const invalidIndex = hisopados.findIndex(
+        (item) => item.tipo.trim() === "" || item.detalle.trim() === ""
+      );
+
+      if (invalidIndex !== -1) {
+        alert(`Completa tipo y detalle del hisopado #${invalidIndex + 1}.`);
+        return;
+      }
     }
 
     const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
@@ -140,8 +156,9 @@ export default function FormInspeccionPreoperativa() {
       responsable: responsable.trim(),
       evaluacion_equipos: evaluaciones,
       hisopado_aplica: incluyeHisopado,
-      hisopado_tipo: incluyeHisopado ? tipoHisopado : "",
-      hisopado_detalle: incluyeHisopado ? detalleHisopado.trim() : "",
+      hisopados: incluyeHisopado
+        ? hisopados.map((item) => ({ tipo: item.tipo.trim(), detalle: item.detalle.trim() }))
+        : [],
     };
 
     console.log("Payload final para API:", payload);
@@ -166,8 +183,7 @@ export default function FormInspeccionPreoperativa() {
       setObservacionEquipo("");
       setEvaluaciones([]);
       setIncluyeHisopado(false);
-      setTipoHisopado("");
-      setDetalleHisopado("");
+      setHisopados([{ tipo: "", detalle: "" }]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error inesperado";
       alert(message);
@@ -257,8 +273,7 @@ export default function FormInspeccionPreoperativa() {
               const checked = event.target.checked;
               setIncluyeHisopado(checked);
               if (!checked) {
-                setTipoHisopado("");
-                setDetalleHisopado("");
+                setHisopados([{ tipo: "", detalle: "" }]);
               }
             }}
             className="h-4 w-4 rounded border-slate-300"
@@ -276,25 +291,71 @@ export default function FormInspeccionPreoperativa() {
           <label className="mb-2 block font-medium text-slate-800">
             Hisopado a trabajadores, superficies o equipos
           </label>
-          <select
-            value={tipoHisopado}
-            onChange={(event) => setTipoHisopado(event.target.value)}
-            disabled={!incluyeHisopado}
-            className="mb-2 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-          >
-            <option value="">Selecciona una opción</option>
-            <option value="trabajadores">Trabajadores</option>
-            <option value="superficies">Superficies</option>
-            <option value="equipos">Equipos</option>
-          </select>
-          <input
-            type="text"
-            value={detalleHisopado}
-            onChange={(event) => setDetalleHisopado(event.target.value)}
-            disabled={!incluyeHisopado}
-            placeholder="Escribe el trabajador, la superficie o el equipo"
-            className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-          />
+          <div className="space-y-2">
+            {hisopados.map((hisopado, index) => (
+              <div key={`hisopado-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium text-slate-600">Hisopado #{index + 1}</p>
+                  {index > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setHisopados((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
+                      }
+                      disabled={!incluyeHisopado}
+                      className="rounded-md border border-rose-300 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Quitar
+                    </button>
+                  ) : null}
+                </div>
+
+                <select
+                  value={hisopado.tipo}
+                  onChange={(event) =>
+                    setHisopados((prev) =>
+                      prev.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, tipo: event.target.value } : item
+                      )
+                    )
+                  }
+                  disabled={!incluyeHisopado}
+                  className="mb-2 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                >
+                  <option value="">Selecciona una opción</option>
+                  <option value="trabajadores">Trabajadores</option>
+                  <option value="superficies">Superficies</option>
+                  <option value="equipos">Equipos</option>
+                </select>
+
+                <input
+                  type="text"
+                  value={hisopado.detalle}
+                  onChange={(event) =>
+                    setHisopados((prev) =>
+                      prev.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, detalle: event.target.value } : item
+                      )
+                    )
+                  }
+                  disabled={!incluyeHisopado}
+                  placeholder="Escribe el trabajador, la superficie o el equipo"
+                  className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setHisopados((prev) => [...prev, { tipo: "", detalle: "" }])}
+              disabled={!incluyeHisopado || hisopados.length >= 3}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {hisopados.length >= 3 ? "Máximo 3 hisopados" : "Agregar otro hisopado"}
+            </button>
+          </div>
         </div>
       </section>
 

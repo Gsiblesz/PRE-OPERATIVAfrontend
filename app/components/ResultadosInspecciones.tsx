@@ -70,12 +70,18 @@ type EquipoEvaluado = {
   observacionEquipo?: string;
 };
 
+type HisopadoResultado = {
+  tipo: string;
+  detalle: string;
+};
+
 type Inspeccion = {
   id: string;
   fecha: string;
   area: string;
   responsable?: string;
   evaluacion_equipos: EquipoEvaluado[];
+  hisopados?: HisopadoResultado[];
   created_at: string;
 };
 
@@ -236,12 +242,23 @@ export default function ResultadosInspecciones() {
       )
     ).length;
 
+    const totalHisopados = dataFiltrada.reduce(
+      (acc, row) => acc + (Array.isArray(row.hisopados) ? row.hisopados.length : 0),
+      0
+    );
+
+    const inspeccionesConHisopado = dataFiltrada.filter(
+      (row) => Array.isArray(row.hisopados) && row.hisopados.length > 0
+    ).length;
+
     return {
       totalInspecciones,
       totalEquipos,
       totalConformes,
       totalNoConformes,
       inspeccionesConIncidencias,
+      totalHisopados,
+      inspeccionesConHisopado,
       porcentajeCumplimiento:
         totalConformes + totalNoConformes > 0
           ? Math.round((totalConformes / (totalConformes + totalNoConformes)) * 100)
@@ -907,10 +924,11 @@ export default function ResultadosInspecciones() {
         ["Equipos evaluados", String(resumen.totalEquipos)],
         ["No conformidades", String(resumen.totalNoConformes)],
         ["Cumplimiento global", `${resumen.porcentajeCumplimiento}%`],
+        ["Hisopados registrados", String(resumen.totalHisopados)],
       ];
 
       const cardY = 156;
-      const cardW = (pageWidth - 36 * 2 - 12 * 3) / 4;
+      const cardW = (pageWidth - 36 * 2 - 12 * 4) / 5;
       tarjetas.forEach((card, index) => {
         const x = 36 + index * (cardW + 12);
         doc.setFillColor(239, 246, 255);
@@ -1280,7 +1298,7 @@ export default function ResultadosInspecciones() {
         </section>
       ) : (
         <>
-          <section className="grid gap-3 md:grid-cols-3">
+          <section className="grid gap-3 md:grid-cols-4">
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm text-slate-500">Preoperativas</p>
               <p className="text-2xl font-semibold text-slate-800">{resumen.totalInspecciones}</p>
@@ -1293,12 +1311,20 @@ export default function ResultadosInspecciones() {
               <p className="text-sm text-slate-500">No conformidad</p>
               <p className="text-2xl font-semibold text-rose-700">{resumen.totalNoConformes}</p>
             </article>
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-slate-500">Hisopados registrados</p>
+              <p className="text-2xl font-semibold text-cyan-700">{resumen.totalHisopados}</p>
+            </article>
           </section>
 
-          <section className="grid gap-3 md:grid-cols-2">
+          <section className="grid gap-3 md:grid-cols-3">
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm text-slate-500">Equipos evaluados</p>
               <p className="text-2xl font-semibold text-slate-800">{resumen.totalEquipos}</p>
+            </article>
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-slate-500">Preoperativas con hisopado</p>
+              <p className="text-2xl font-semibold text-cyan-700">{resumen.inspeccionesConHisopado}</p>
             </article>
             <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-sm text-slate-500">Eficiencia por área</p>
@@ -1870,6 +1896,16 @@ export default function ResultadosInspecciones() {
                           <p className="font-semibold text-slate-800">Fecha: {inspeccion.fecha}</p>
                           {inspeccion.responsable ? (
                             <p className="text-xs text-slate-600">Responsable: {inspeccion.responsable}</p>
+                          ) : null}
+                          {inspeccion.hisopados && inspeccion.hisopados.length > 0 ? (
+                            <div className="mt-1 space-y-1">
+                              <p className="text-xs font-medium text-cyan-700">Hisopados ({inspeccion.hisopados.length})</p>
+                              {inspeccion.hisopados.map((hisopado, index) => (
+                                <p key={`${inspeccion.id}-hisopado-${index}`} className="text-xs text-slate-600">
+                                  {index + 1}. {hisopado.tipo}: {hisopado.detalle}
+                                </p>
+                              ))}
+                            </div>
                           ) : null}
                         </div>
                         <div className="flex items-center gap-3">
