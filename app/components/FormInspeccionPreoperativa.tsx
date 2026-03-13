@@ -28,6 +28,7 @@ export default function FormInspeccionPreoperativa() {
   const [observacionEquipo, setObservacionEquipo] = useState("");
   const [evaluaciones, setEvaluaciones] = useState<EvaluacionEquipo[]>([]);
   const [incluyeHisopado, setIncluyeHisopado] = useState(false);
+  const [tipoHisopado, setTipoHisopado] = useState("");
   const [detalleHisopado, setDetalleHisopado] = useState("");
 
   const equiposArea = useMemo(() => (area ? AREAS_CONFIG[area] ?? [] : []), [area]);
@@ -55,6 +56,7 @@ export default function FormInspeccionPreoperativa() {
     setObservacionEquipo("");
     setEvaluaciones([]);
     setIncluyeHisopado(false);
+    setTipoHisopado("");
     setDetalleHisopado("");
   };
 
@@ -122,6 +124,11 @@ export default function FormInspeccionPreoperativa() {
   const finalizarArea = async () => {
     if (!area || !responsableValido || evaluaciones.length === 0) return;
 
+    if (incluyeHisopado && !tipoHisopado) {
+      alert("Selecciona si el hisopado es para trabajadores, superficies o equipos.");
+      return;
+    }
+
     const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
     const endpoint = apiBaseUrl
       ? `${apiBaseUrl.replace(/\/$/, "")}/api/inspecciones-preoperativas`
@@ -133,6 +140,7 @@ export default function FormInspeccionPreoperativa() {
       responsable: responsable.trim(),
       evaluacion_equipos: evaluaciones,
       hisopado_aplica: incluyeHisopado,
+      hisopado_tipo: incluyeHisopado ? tipoHisopado : "",
       hisopado_detalle: incluyeHisopado ? detalleHisopado.trim() : "",
     };
 
@@ -158,6 +166,7 @@ export default function FormInspeccionPreoperativa() {
       setObservacionEquipo("");
       setEvaluaciones([]);
       setIncluyeHisopado(false);
+      setTipoHisopado("");
       setDetalleHisopado("");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error inesperado";
@@ -248,6 +257,7 @@ export default function FormInspeccionPreoperativa() {
               const checked = event.target.checked;
               setIncluyeHisopado(checked);
               if (!checked) {
+                setTipoHisopado("");
                 setDetalleHisopado("");
               }
             }}
@@ -266,6 +276,17 @@ export default function FormInspeccionPreoperativa() {
           <label className="mb-2 block font-medium text-slate-800">
             Hisopado a trabajadores, superficies o equipos
           </label>
+          <select
+            value={tipoHisopado}
+            onChange={(event) => setTipoHisopado(event.target.value)}
+            disabled={!incluyeHisopado}
+            className="mb-2 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+          >
+            <option value="">Selecciona una opción</option>
+            <option value="trabajadores">Trabajadores</option>
+            <option value="superficies">Superficies</option>
+            <option value="equipos">Equipos</option>
+          </select>
           <input
             type="text"
             value={detalleHisopado}
