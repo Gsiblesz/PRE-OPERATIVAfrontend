@@ -1,10 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useMemo, useState } from "react";
 import { AREAS_CONFIG, EstadoAspecto } from "../data/areas-config";
-import logoPanDeTata from "../../logopandetata.png";
 
 type AspectoEvaluado = {
   aspecto: string;
@@ -163,21 +161,13 @@ export default function FormInspeccionPreoperativa() {
     <main className="mx-auto max-w-5xl space-y-4 p-4 md:p-6">
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Image
-              src={logoPanDeTata}
-              alt="Pan de Tata"
-              className="h-12 w-auto rounded-lg border border-slate-200 bg-white p-1"
-              priority
-            />
-            <div>
+          <div>
             <h1 className="text-xl font-semibold text-slate-800 md:text-2xl">
               Inspección preoperativa
             </h1>
             <p className="mt-1 text-sm text-slate-500">
               Pre-Operativa: La pre operativa en Pan de Tata para identificar incidencias y detectar no conformidades por área y equipo
             </p>
-            </div>
           </div>
           <Link
             href="/resultados"

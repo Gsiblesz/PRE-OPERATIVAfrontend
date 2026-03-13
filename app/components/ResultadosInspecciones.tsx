@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import logoPanDeTata from "../../logopandetata.png";
 
@@ -839,22 +838,13 @@ export default function ResultadosInspecciones() {
     setError("");
   };
 
-  const exportarResumenPdf = () => {
+  const exportarResumenPdf = async () => {
     if (dataFiltrada.length === 0) {
       setError("No hay datos para exportar con los filtros actuales.");
       return;
     }
 
-    const escapeHtml = (value: string) =>
-      value
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-
     const fechaGeneracion = new Date().toLocaleString("es-VE");
-    const logoUrl = `${window.location.origin}${logoPanDeTata.src}`;
     const areaTexto = area || "Todas las areas";
     const periodoTexto = from && to ? `${from} a ${to}` : "Sin rango de fechas";
     const fechaArchivo = new Date().toISOString().slice(0, 10);
@@ -865,264 +855,169 @@ export default function ResultadosInspecciones() {
         .replace(/[\u0300-\u036f]/g, "")
         .replace(/[^a-z0-9]+/g, "_")
         .replace(/^_+|_+$/g, "");
+
     const areaSlug = normalizarSlug(areaTexto || "todas_las_areas") || "todas_las_areas";
     const suggestedFileName = `reporte_preoperativo_${areaSlug}_${fechaArchivo}`;
     const topAreas = patronesPorArea.slice(0, 5);
     const topEquipos = topEquiposNoConformes.slice(0, 8);
     const observacionesRecientes = observacionesDashboard.recientes.slice(0, 5);
 
-    const html = `<!doctype html>
-<html lang="es">
-  <head>
-    <meta charset="utf-8" />
-    <title>${escapeHtml(suggestedFileName)}</title>
-    <style>
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        padding: 24px;
-        font-family: "Segoe UI", Arial, sans-serif;
-        color: #172554;
-        background: #f8fafc;
-      }
-      h1, h2 { margin: 0 0 8px 0; }
-      p { margin: 0; }
-      .page {
-        border: 1px solid #cbd5e1;
-        border-radius: 16px;
-        background: white;
-        overflow: hidden;
-      }
-      .header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 16px 18px;
-        background: linear-gradient(135deg, #1d4ed8, #0f172a);
-        color: white;
-      }
-      .header-left {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-      .logo {
-        height: 52px;
-        width: auto;
-        border-radius: 8px;
-        background: white;
-        padding: 4px;
-      }
-      .title { font-size: 19px; font-weight: 700; line-height: 1.2; }
-      .subtitle { font-size: 12px; opacity: 0.9; }
-      .meta {
-        color: #334155;
-        font-size: 12px;
-        margin: 14px 18px 0;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 10px;
-        margin: 14px 18px 0;
-      }
-      .card {
-        border: 1px solid #bfdbfe;
-        border-radius: 10px;
-        padding: 10px;
-        background: #eff6ff;
-      }
-      .label { color: #1e3a8a; font-size: 11px; text-transform: uppercase; }
-      .value { margin-top: 6px; font-size: 21px; font-weight: 700; color: #0f172a; }
-      .section { margin: 18px; }
-      .section h2 {
-        font-size: 14px;
-        color: #1e3a8a;
-        padding-bottom: 6px;
-        border-bottom: 1px solid #dbeafe;
-      }
-      table { width: 100%; border-collapse: collapse; font-size: 12px; }
-      th, td { border: 1px solid #e2e8f0; padding: 7px; text-align: left; vertical-align: top; }
-      th { background: #eff6ff; color: #1e3a8a; }
-      ul { margin: 8px 0 0 16px; padding: 0; }
-      li { margin-bottom: 6px; }
-      .footer {
-        margin: 0 18px 16px;
-        padding-top: 8px;
-        border-top: 1px dashed #cbd5e1;
-        font-size: 11px;
-        color: #64748b;
-      }
-      .signatures {
-        margin: 8px 18px 18px;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-      }
-      .signature-box {
-        border-top: 1px solid #64748b;
-        padding-top: 8px;
-        min-height: 48px;
-      }
-      .signature-label {
-        font-size: 11px;
-        color: #475569;
-      }
-      .signature-hint {
-        margin-top: 3px;
-        font-size: 10px;
-        color: #94a3b8;
-      }
-      @media print {
-        body { padding: 0; background: white; }
-        .page { border: none; border-radius: 0; }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="page">
-      <header class="header">
-        <div class="header-left">
-          <img src="${escapeHtml(logoUrl)}" alt="Pan de Tata" class="logo" />
-          <div>
-            <p class="title">Reporte ejecutivo preoperativo</p>
-            <p class="subtitle">Pan de Tata | Control de incidencias y cumplimiento</p>
-          </div>
-        </div>
-      </header>
-      <p class="meta">Generado: ${escapeHtml(fechaGeneracion)} | Area: ${escapeHtml(areaTexto)} | Periodo: ${escapeHtml(periodoTexto)}</p>
+    try {
+      const [{ jsPDF }, autoTableModule] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable"),
+      ]);
 
-      <div class="grid">
-        <div class="card">
-          <div class="label">Preoperativas</div>
-          <div class="value">${resumen.totalInspecciones}</div>
-        </div>
-        <div class="card">
-          <div class="label">Equipos evaluados</div>
-          <div class="value">${resumen.totalEquipos}</div>
-        </div>
-        <div class="card">
-          <div class="label">No conformidades</div>
-          <div class="value">${resumen.totalNoConformes}</div>
-        </div>
-        <div class="card">
-          <div class="label">Cumplimiento global</div>
-          <div class="value">${resumen.porcentajeCumplimiento}%</div>
-        </div>
-      </div>
+      const autoTable = autoTableModule.default;
+      const logoResponse = await fetch(logoPanDeTata.src);
+      const logoBlob = await logoResponse.blob();
 
-      <section class="section">
-        <h2>Top areas por desempeno</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Area</th>
-              <th>Cumplimiento</th>
-              <th>Incidencia</th>
-              <th>Observaciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              topAreas.length > 0
-                ? topAreas
-                    .map(
-                      (item) => `<tr>
-                <td>${escapeHtml(item.areaNombre)}</td>
-                <td>${item.cumplimiento}%</td>
-                <td>${item.incidencia}%</td>
-                <td>${item.observaciones}</td>
-              </tr>`
-                    )
-                    .join("")
-                : "<tr><td colspan=\"4\">Sin datos.</td></tr>"
-            }
-          </tbody>
-        </table>
-      </section>
+      const logoDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("No se pudo leer el logo para el PDF."));
+        reader.readAsDataURL(logoBlob);
+      });
 
-      <section class="section">
-        <h2>Equipos mas criticos (no conformidades)</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Equipo</th>
-              <th>Total no conformidades</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              topEquipos.length > 0
-                ? topEquipos
-                    .map(
-                      (item) => `<tr>
-                <td>${escapeHtml(item.equipoNombre)}</td>
-                <td>${item.total}</td>
-              </tr>`
-                    )
-                    .join("")
-                : "<tr><td colspan=\"2\">Sin datos.</td></tr>"
-            }
-          </tbody>
-        </table>
-      </section>
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
 
-      <section class="section">
-        <h2>Observaciones recientes</h2>
-        ${
+      doc.setFillColor(29, 78, 216);
+      doc.rect(0, 0, pageWidth, 86, "F");
+      doc.addImage(logoDataUrl, "PNG", 36, 16, 56, 56);
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.text("Reporte ejecutivo preoperativo", 104, 40);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text("Pan de Tata | Control de incidencias y cumplimiento", 104, 58);
+
+      doc.setTextColor(51, 65, 85);
+      doc.setFontSize(10);
+      doc.text(`Generado: ${fechaGeneracion}`, 36, 108);
+      doc.text(`Area: ${areaTexto}`, 36, 124);
+      doc.text(`Periodo: ${periodoTexto}`, 36, 140);
+
+      const tarjetas = [
+        ["Preoperativas", String(resumen.totalInspecciones)],
+        ["Equipos evaluados", String(resumen.totalEquipos)],
+        ["No conformidades", String(resumen.totalNoConformes)],
+        ["Cumplimiento global", `${resumen.porcentajeCumplimiento}%`],
+      ];
+
+      const cardY = 156;
+      const cardW = (pageWidth - 36 * 2 - 12 * 3) / 4;
+      tarjetas.forEach((card, index) => {
+        const x = 36 + index * (cardW + 12);
+        doc.setFillColor(239, 246, 255);
+        doc.setDrawColor(191, 219, 254);
+        doc.roundedRect(x, cardY, cardW, 64, 8, 8, "FD");
+        doc.setTextColor(30, 58, 138);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.text(card[0], x + 10, cardY + 18);
+        doc.setTextColor(15, 23, 42);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(16);
+        doc.text(card[1], x + 10, cardY + 44);
+      });
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(30, 58, 138);
+      doc.text("Top areas por desempeno", 36, cardY + 90);
+
+      autoTable(doc, {
+        startY: cardY + 96,
+        head: [["Area", "Cumplimiento", "Incidencia", "Observaciones"]],
+        body:
+          topAreas.length > 0
+            ? topAreas.map((item) => [
+                item.areaNombre,
+                `${item.cumplimiento}%`,
+                `${item.incidencia}%`,
+                String(item.observaciones),
+              ])
+            : [["Sin datos", "-", "-", "-"]],
+        theme: "grid",
+        headStyles: { fillColor: [239, 246, 255], textColor: [30, 58, 138] },
+        styles: { fontSize: 9, cellPadding: 5 },
+        margin: { left: 36, right: 36 },
+      });
+
+      let cursorY = ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 290) + 20;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(30, 58, 138);
+      doc.text("Equipos mas criticos (no conformidades)", 36, cursorY - 6);
+
+      autoTable(doc, {
+        startY: cursorY,
+        head: [["Equipo", "Total no conformidades"]],
+        body:
+          topEquipos.length > 0
+            ? topEquipos.map((item) => [item.equipoNombre, String(item.total)])
+            : [["Sin datos", "-"]],
+        theme: "grid",
+        headStyles: { fillColor: [239, 246, 255], textColor: [30, 58, 138] },
+        styles: { fontSize: 9, cellPadding: 5 },
+        margin: { left: 36, right: 36 },
+      });
+
+      cursorY = ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? cursorY) + 20;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(30, 58, 138);
+      doc.text("Observaciones recientes", 36, cursorY - 6);
+
+      autoTable(doc, {
+        startY: cursorY,
+        head: [["Detalle"]],
+        body:
           observacionesRecientes.length > 0
-            ? `<ul>${observacionesRecientes
-                .map(
-                  (item) =>
-                    `<li>${escapeHtml(item.fecha)} | ${escapeHtml(item.area)} | ${escapeHtml(item.equipo)}: ${escapeHtml(item.texto)}</li>`
-                )
-                .join("")}</ul>`
-            : "<p>Sin observaciones recientes.</p>"
-        }
-      </section>
+            ? observacionesRecientes.map((item) => [
+                `${item.fecha} | ${item.area} | ${item.equipo}: ${item.texto}`,
+              ])
+            : [["Sin observaciones recientes"]],
+        theme: "grid",
+        headStyles: { fillColor: [239, 246, 255], textColor: [30, 58, 138] },
+        styles: { fontSize: 9, cellPadding: 5 },
+        margin: { left: 36, right: 36 },
+      });
 
-      <section class="section">
-        <h2>Aprobaciones</h2>
-      </section>
+      let firmaY = ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? cursorY) + 52;
+      if (firmaY > pageHeight - 90) {
+        doc.addPage();
+        firmaY = 140;
+      }
 
-      <div class="signatures">
-        <div class="signature-box">
-          <div class="signature-label">Responsable de area</div>
-          <div class="signature-hint">Nombre, firma y fecha</div>
-        </div>
-        <div class="signature-box">
-          <div class="signature-label">Supervisor operativo</div>
-          <div class="signature-hint">Nombre, firma y fecha</div>
-        </div>
-      </div>
+      doc.setDrawColor(100, 116, 139);
+      doc.line(60, firmaY, 250, firmaY);
+      doc.line(pageWidth - 250, firmaY, pageWidth - 60, firmaY);
+      doc.setTextColor(71, 85, 105);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text("Responsable de area", 60, firmaY + 14);
+      doc.text("Nombre, firma y fecha", 60, firmaY + 27);
+      doc.text("Supervisor operativo", pageWidth - 250, firmaY + 14);
+      doc.text("Nombre, firma y fecha", pageWidth - 250, firmaY + 27);
 
-      <div class="footer">
-        Documento interno para seguimiento operativo. Archivo sugerido: ${escapeHtml(suggestedFileName)}.pdf
-      </div>
-    </div>
-  </body>
-</html>`;
+      doc.setTextColor(100, 116, 139);
+      doc.setFontSize(8);
+      doc.text(
+        "Documento interno para seguimiento operativo. Generado automaticamente desde la plataforma.",
+        36,
+        pageHeight - 24
+      );
 
-    const htmlBlob = new Blob([html], { type: "text/html" });
-    const htmlUrl = URL.createObjectURL(htmlBlob);
-
-    const popup = window.open(htmlUrl, "_blank", "width=980,height=760");
-    if (!popup) {
-      URL.revokeObjectURL(htmlUrl);
-      setError("No se pudo abrir la vista de impresión. Verifica si el navegador bloquea ventanas emergentes.");
-      return;
+      doc.save(`${suggestedFileName}.pdf`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "No se pudo generar el PDF.";
+      setError(message);
     }
-
-    popup.onload = () => {
-      popup.document.title = suggestedFileName;
-      popup.focus();
-      popup.print();
-
-      window.setTimeout(() => {
-        URL.revokeObjectURL(htmlUrl);
-      }, 10000);
-    };
   };
 
   const toggleSelect = (id: string) => {
@@ -1347,19 +1242,11 @@ export default function ResultadosInspecciones() {
     <main className="mx-auto max-w-6xl space-y-4 p-4 md:p-6">
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Image
-              src={logoPanDeTata}
-              alt="Pan de Tata"
-              className="h-12 w-auto rounded-lg border border-slate-200 bg-white p-1"
-              priority
-            />
-            <div>
+          <div>
             <h1 className="text-xl font-semibold text-slate-800 md:text-2xl">Resultados de inspecciones</h1>
             <p className="mt-1 text-sm text-slate-500">
               Pre-Operativa: La pre operativa en Pan de Tata para identificar incidencias y detectar no conformidades por área y equipo
             </p>
-            </div>
           </div>
           <Link
             href="/"

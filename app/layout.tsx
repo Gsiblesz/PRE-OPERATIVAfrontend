@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import "./globals.css";
+import logoPanDeTata from "../logopandetata.png";
 
 export const metadata: Metadata = {
   title: "Pre-Operativa | Pan de Tata",
@@ -14,13 +16,21 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className="bg-slate-100 text-slate-900 antialiased">
-        <a
-          href="https://menu-ten-sigma.vercel.app/"
-          className="fixed left-4 top-4 z-50 flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
-          aria-label="Ir al menú"
-        >
-          <span className="text-xl leading-none">☰</span>
-        </a>
+        <div className="fixed left-4 top-4 z-50 flex items-center gap-3">
+          <a
+            href="https://menu-ten-sigma.vercel.app/"
+            className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
+            aria-label="Ir al menú"
+          >
+            <span className="text-xl leading-none">☰</span>
+          </a>
+          <Image
+            src={logoPanDeTata}
+            alt="Pan de Tata"
+            className="h-16 w-auto rounded-xl border border-slate-300 bg-white p-1.5 shadow-sm"
+            priority
+          />
+        </div>
 
         <div className="min-h-screen pb-12">{children}</div>
         <p className="fixed bottom-2 left-3 text-xs text-slate-400">
