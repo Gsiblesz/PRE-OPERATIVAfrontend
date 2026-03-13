@@ -27,6 +27,8 @@ export default function FormInspeccionPreoperativa() {
   const [aspectosUI, setAspectosUI] = useState<Record<string, EstadoAspectoUI>>({});
   const [observacionEquipo, setObservacionEquipo] = useState("");
   const [evaluaciones, setEvaluaciones] = useState<EvaluacionEquipo[]>([]);
+  const [incluyeHisopado, setIncluyeHisopado] = useState(false);
+  const [detalleHisopado, setDetalleHisopado] = useState("");
 
   const equiposArea = useMemo(() => (area ? AREAS_CONFIG[area] ?? [] : []), [area]);
 
@@ -52,6 +54,8 @@ export default function FormInspeccionPreoperativa() {
     setAspectosUI({});
     setObservacionEquipo("");
     setEvaluaciones([]);
+    setIncluyeHisopado(false);
+    setDetalleHisopado("");
   };
 
   const onEquipoChange = (nextEquipoId: string) => {
@@ -128,6 +132,8 @@ export default function FormInspeccionPreoperativa() {
       area,
       responsable: responsable.trim(),
       evaluacion_equipos: evaluaciones,
+      hisopado_aplica: incluyeHisopado,
+      hisopado_detalle: incluyeHisopado ? detalleHisopado.trim() : "",
     };
 
     console.log("Payload final para API:", payload);
@@ -151,6 +157,8 @@ export default function FormInspeccionPreoperativa() {
       setAspectosUI({});
       setObservacionEquipo("");
       setEvaluaciones([]);
+      setIncluyeHisopado(false);
+      setDetalleHisopado("");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error inesperado";
       alert(message);
@@ -229,10 +237,50 @@ export default function FormInspeccionPreoperativa() {
         </select>
       </section>
 
+      <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+        <h2 className="text-lg font-medium text-slate-800">Paso 4 (Opcional): Hisopado</h2>
+
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <input
+            type="checkbox"
+            checked={incluyeHisopado}
+            onChange={(event) => {
+              const checked = event.target.checked;
+              setIncluyeHisopado(checked);
+              if (!checked) {
+                setDetalleHisopado("");
+              }
+            }}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          Esta pre-operativa va a constar de un hisopado
+        </label>
+
+        <div
+          className={`rounded-xl border p-3 md:p-4 ${
+            incluyeHisopado
+              ? "border-slate-200 bg-white"
+              : "border-slate-200 bg-slate-100"
+          }`}
+        >
+          <label className="mb-2 block font-medium text-slate-800">
+            Hisopado a trabajadores, superficies o equipos
+          </label>
+          <input
+            type="text"
+            value={detalleHisopado}
+            onChange={(event) => setDetalleHisopado(event.target.value)}
+            disabled={!incluyeHisopado}
+            placeholder="Escribe el trabajador, la superficie o el equipo"
+            className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+          />
+        </div>
+      </section>
+
       {equipoSeleccionado ? (
         <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
           <h2 className="text-lg font-medium text-slate-800">
-            Paso 4: Evalúa aspectos de {equipoSeleccionado.nombre}
+            Paso 5: Evalúa aspectos de {equipoSeleccionado.nombre}
           </h2>
 
           <div className="space-y-3">
