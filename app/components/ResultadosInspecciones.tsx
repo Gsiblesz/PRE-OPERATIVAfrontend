@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import logoPanDeTata from "../../logopandetata.png";
 
 const MONTH_OPTIONS = [
   { value: "01", label: "Ene" },
@@ -837,6 +839,288 @@ export default function ResultadosInspecciones() {
     setError("");
   };
 
+  const exportarResumenPdf = () => {
+    if (dataFiltrada.length === 0) {
+      setError("No hay datos para exportar con los filtros actuales.");
+      return;
+    }
+
+    const popup = window.open("", "_blank", "noopener,noreferrer,width=980,height=760");
+    if (!popup) {
+      setError("No se pudo abrir la vista de impresión. Verifica si el navegador bloquea ventanas emergentes.");
+      return;
+    }
+
+    const escapeHtml = (value: string) =>
+      value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+    const fechaGeneracion = new Date().toLocaleString("es-VE");
+    const logoUrl = `${window.location.origin}${logoPanDeTata.src}`;
+    const areaTexto = area || "Todas las areas";
+    const periodoTexto = from && to ? `${from} a ${to}` : "Sin rango de fechas";
+    const fechaArchivo = new Date().toISOString().slice(0, 10);
+    const normalizarSlug = (value: string) =>
+      value
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+    const areaSlug = normalizarSlug(areaTexto || "todas_las_areas") || "todas_las_areas";
+    const suggestedFileName = `reporte_preoperativo_${areaSlug}_${fechaArchivo}`;
+    const topAreas = patronesPorArea.slice(0, 5);
+    const topEquipos = topEquiposNoConformes.slice(0, 8);
+    const observacionesRecientes = observacionesDashboard.recientes.slice(0, 5);
+
+    const html = `<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(suggestedFileName)}</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: "Segoe UI", Arial, sans-serif;
+        color: #172554;
+        background: #f8fafc;
+      }
+      h1, h2 { margin: 0 0 8px 0; }
+      p { margin: 0; }
+      .page {
+        border: 1px solid #cbd5e1;
+        border-radius: 16px;
+        background: white;
+        overflow: hidden;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 18px;
+        background: linear-gradient(135deg, #1d4ed8, #0f172a);
+        color: white;
+      }
+      .header-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .logo {
+        height: 52px;
+        width: auto;
+        border-radius: 8px;
+        background: white;
+        padding: 4px;
+      }
+      .title { font-size: 19px; font-weight: 700; line-height: 1.2; }
+      .subtitle { font-size: 12px; opacity: 0.9; }
+      .meta {
+        color: #334155;
+        font-size: 12px;
+        margin: 14px 18px 0;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin: 14px 18px 0;
+      }
+      .card {
+        border: 1px solid #bfdbfe;
+        border-radius: 10px;
+        padding: 10px;
+        background: #eff6ff;
+      }
+      .label { color: #1e3a8a; font-size: 11px; text-transform: uppercase; }
+      .value { margin-top: 6px; font-size: 21px; font-weight: 700; color: #0f172a; }
+      .section { margin: 18px; }
+      .section h2 {
+        font-size: 14px;
+        color: #1e3a8a;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #dbeafe;
+      }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th, td { border: 1px solid #e2e8f0; padding: 7px; text-align: left; vertical-align: top; }
+      th { background: #eff6ff; color: #1e3a8a; }
+      ul { margin: 8px 0 0 16px; padding: 0; }
+      li { margin-bottom: 6px; }
+      .footer {
+        margin: 0 18px 16px;
+        padding-top: 8px;
+        border-top: 1px dashed #cbd5e1;
+        font-size: 11px;
+        color: #64748b;
+      }
+      .signatures {
+        margin: 8px 18px 18px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      .signature-box {
+        border-top: 1px solid #64748b;
+        padding-top: 8px;
+        min-height: 48px;
+      }
+      .signature-label {
+        font-size: 11px;
+        color: #475569;
+      }
+      .signature-hint {
+        margin-top: 3px;
+        font-size: 10px;
+        color: #94a3b8;
+      }
+      @media print {
+        body { padding: 0; background: white; }
+        .page { border: none; border-radius: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="header">
+        <div class="header-left">
+          <img src="${escapeHtml(logoUrl)}" alt="Pan de Tata" class="logo" />
+          <div>
+            <p class="title">Reporte ejecutivo preoperativo</p>
+            <p class="subtitle">Pan de Tata | Control de incidencias y cumplimiento</p>
+          </div>
+        </div>
+      </header>
+      <p class="meta">Generado: ${escapeHtml(fechaGeneracion)} | Area: ${escapeHtml(areaTexto)} | Periodo: ${escapeHtml(periodoTexto)}</p>
+
+      <div class="grid">
+        <div class="card">
+          <div class="label">Preoperativas</div>
+          <div class="value">${resumen.totalInspecciones}</div>
+        </div>
+        <div class="card">
+          <div class="label">Equipos evaluados</div>
+          <div class="value">${resumen.totalEquipos}</div>
+        </div>
+        <div class="card">
+          <div class="label">No conformidades</div>
+          <div class="value">${resumen.totalNoConformes}</div>
+        </div>
+        <div class="card">
+          <div class="label">Cumplimiento global</div>
+          <div class="value">${resumen.porcentajeCumplimiento}%</div>
+        </div>
+      </div>
+
+      <section class="section">
+        <h2>Top areas por desempeno</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Area</th>
+              <th>Cumplimiento</th>
+              <th>Incidencia</th>
+              <th>Observaciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              topAreas.length > 0
+                ? topAreas
+                    .map(
+                      (item) => `<tr>
+                <td>${escapeHtml(item.areaNombre)}</td>
+                <td>${item.cumplimiento}%</td>
+                <td>${item.incidencia}%</td>
+                <td>${item.observaciones}</td>
+              </tr>`
+                    )
+                    .join("")
+                : "<tr><td colspan=\"4\">Sin datos.</td></tr>"
+            }
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>Equipos mas criticos (no conformidades)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Equipo</th>
+              <th>Total no conformidades</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              topEquipos.length > 0
+                ? topEquipos
+                    .map(
+                      (item) => `<tr>
+                <td>${escapeHtml(item.equipoNombre)}</td>
+                <td>${item.total}</td>
+              </tr>`
+                    )
+                    .join("")
+                : "<tr><td colspan=\"2\">Sin datos.</td></tr>"
+            }
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2>Observaciones recientes</h2>
+        ${
+          observacionesRecientes.length > 0
+            ? `<ul>${observacionesRecientes
+                .map(
+                  (item) =>
+                    `<li>${escapeHtml(item.fecha)} | ${escapeHtml(item.area)} | ${escapeHtml(item.equipo)}: ${escapeHtml(item.texto)}</li>`
+                )
+                .join("")}</ul>`
+            : "<p>Sin observaciones recientes.</p>"
+        }
+      </section>
+
+      <section class="section">
+        <h2>Aprobaciones</h2>
+      </section>
+
+      <div class="signatures">
+        <div class="signature-box">
+          <div class="signature-label">Responsable de area</div>
+          <div class="signature-hint">Nombre, firma y fecha</div>
+        </div>
+        <div class="signature-box">
+          <div class="signature-label">Supervisor operativo</div>
+          <div class="signature-hint">Nombre, firma y fecha</div>
+        </div>
+      </div>
+
+      <div class="footer">
+        Documento interno para seguimiento operativo. Archivo sugerido: ${escapeHtml(suggestedFileName)}.pdf
+      </div>
+    </div>
+  </body>
+</html>`;
+
+    popup.document.open();
+    popup.document.write(html);
+    popup.document.close();
+    popup.document.title = suggestedFileName;
+    popup.focus();
+
+    window.setTimeout(() => {
+      popup.print();
+    }, 250);
+  };
+
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
@@ -1059,11 +1343,19 @@ export default function ResultadosInspecciones() {
     <main className="mx-auto max-w-6xl space-y-4 p-4 md:p-6">
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+          <div className="flex items-center gap-3">
+            <Image
+              src={logoPanDeTata}
+              alt="Pan de Tata"
+              className="h-12 w-auto rounded-lg border border-slate-200 bg-white p-1"
+              priority
+            />
+            <div>
             <h1 className="text-xl font-semibold text-slate-800 md:text-2xl">Resultados de inspecciones</h1>
             <p className="mt-1 text-sm text-slate-500">
               Pre-Operativa: La pre operativa en Pan de Tata para identificar incidencias y detectar no conformidades por área y equipo
             </p>
+            </div>
           </div>
           <Link
             href="/"
@@ -1310,7 +1602,14 @@ export default function ResultadosInspecciones() {
               Mostrar solo equipos con no conformidades
             </label>
 
-            <div className="mt-3 flex justify-end">
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={exportarResumenPdf}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Exportar resumen (PDF)
+              </button>
               <button
                 type="button"
                 onClick={onCerrarVista}
