@@ -880,6 +880,7 @@ export default function ResultadosInspecciones() {
       });
 
       const doc = new jsPDF({ unit: "pt", format: "a4" });
+      const autoDoc = doc as unknown as { lastAutoTable?: { finalY?: number } };
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
 
@@ -948,7 +949,7 @@ export default function ResultadosInspecciones() {
         margin: { left: 36, right: 36 },
       });
 
-      let cursorY = ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 290) + 20;
+      let cursorY = (autoDoc.lastAutoTable?.finalY ?? 290) + 20;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.setTextColor(30, 58, 138);
@@ -967,7 +968,7 @@ export default function ResultadosInspecciones() {
         margin: { left: 36, right: 36 },
       });
 
-      cursorY = ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? cursorY) + 20;
+      cursorY = (autoDoc.lastAutoTable?.finalY ?? cursorY) + 20;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.setTextColor(30, 58, 138);
@@ -988,7 +989,7 @@ export default function ResultadosInspecciones() {
         margin: { left: 36, right: 36 },
       });
 
-      let firmaY = ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? cursorY) + 52;
+      let firmaY = (autoDoc.lastAutoTable?.finalY ?? cursorY) + 52;
       if (firmaY > pageHeight - 90) {
         doc.addPage();
         firmaY = 140;
