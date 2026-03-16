@@ -18,7 +18,7 @@ export default function RootLayout({
       <body className="bg-slate-100 text-slate-900 antialiased">
         <div className="fixed left-4 top-4 z-50 flex items-center gap-3">
           <a
-            href="https://menu-ten-sigma.vercel.app/"
+            href="https://pre-operativ-afrontend-nine.vercel.app/"
             className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
             aria-label="Ir al menú"
           >
